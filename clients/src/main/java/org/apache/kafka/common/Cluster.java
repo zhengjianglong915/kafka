@@ -113,6 +113,9 @@ public final class Cluster {
                 psNode.add(p);
             }
         }
+        /**
+         * 对partitionsByTopic进行初始化
+         */
         this.partitionsByTopic = new HashMap<>(partsForTopic.size());
         this.availablePartitionsByTopic = new HashMap<>(partsForTopic.size());
         for (Map.Entry<String, List<PartitionInfo>> entry : partsForTopic.entrySet()) {

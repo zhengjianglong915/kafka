@@ -1,3 +1,6 @@
+kafka源码阅读，带阅读注释
+
+
 Apache Kafka
 =================
 See our [web site](http://kafka.apache.org) for details on the project.

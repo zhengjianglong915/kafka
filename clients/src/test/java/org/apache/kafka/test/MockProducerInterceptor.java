@@ -31,6 +31,9 @@ import java.util.concurrent.atomic.AtomicReference;
 public class MockProducerInterceptor implements ClusterResourceListener, ProducerInterceptor<String, String> {
     public static final AtomicInteger INIT_COUNT = new AtomicInteger(0);
     public static final AtomicInteger CLOSE_COUNT = new AtomicInteger(0);
+    /**
+     * 正在发送的消息数量
+     */
     public static final AtomicInteger ONSEND_COUNT = new AtomicInteger(0);
     public static final AtomicInteger ON_SUCCESS_COUNT = new AtomicInteger(0);
     public static final AtomicInteger ON_ERROR_COUNT = new AtomicInteger(0);

@@ -800,6 +800,10 @@ public class KafkaProducer<K, V> implements Producer<K, V> {
     public Future<RecordMetadata> send(ProducerRecord<K, V> record, Callback callback) {
         // intercept the record, which can be potentially modified; this method does not throw exceptions
         ProducerRecord<K, V> interceptedRecord = this.interceptors.onSend(record);
+
+        /**
+         * 真正执行发布消息
+         */
         return doSend(interceptedRecord, callback);
     }
 
@@ -813,6 +817,10 @@ public class KafkaProducer<K, V> implements Producer<K, V> {
             ClusterAndWaitTime clusterAndWaitTime = waitOnMetadata(record.topic(), record.partition(), maxBlockTimeMs);
             long remainingWaitMs = Math.max(0, maxBlockTimeMs - clusterAndWaitTime.waitedOnMetadataMs);
             Cluster cluster = clusterAndWaitTime.cluster;
+
+            /**
+             * 1. 序列化 key和value
+             */
             byte[] serializedKey;
             try {
                 serializedKey = keySerializer.serialize(record.topic(), record.headers(), record.key());
@@ -829,15 +837,26 @@ public class KafkaProducer<K, V> implements Producer<K, V> {
                         " to class " + producerConfig.getClass(ProducerConfig.VALUE_SERIALIZER_CLASS_CONFIG).getName() +
                         " specified in value.serializer", cce);
             }
+
+
+            /**
+             * 2. 获取partition
+             */
             int partition = partition(record, serializedKey, serializedValue, cluster);
             tp = new TopicPartition(record.topic(), partition);
 
+            /**
+             * s
+             */
             setReadOnly(record.headers());
             Header[] headers = record.headers().toArray();
 
             int serializedSize = AbstractRecords.estimateSizeInBytesUpperBound(apiVersions.maxUsableProduceMagic(),
                     compressionType, serializedKey, serializedValue, headers);
             ensureValidRecordSize(serializedSize);
+            /**
+             * 如果没有提供时间戳，则自己创建一个时间戳
+             */
             long timestamp = record.timestamp() == null ? time.milliseconds() : record.timestamp();
             log.trace("Sending record {} with callback {} to topic {} partition {}", record, callback, record.topic(), partition);
             // producer callback will make sure to call both 'callback' and interceptor callback
@@ -846,12 +865,19 @@ public class KafkaProducer<K, V> implements Producer<K, V> {
             if (transactionManager != null && transactionManager.isTransactional())
                 transactionManager.maybeAddPartitionToTransaction(tp);
 
+            /**
+             * 加入到记录收集器后
+             */
             RecordAccumulator.RecordAppendResult result = accumulator.append(tp, timestamp, serializedKey,
                     serializedValue, headers, interceptCallback, remainingWaitMs);
             if (result.batchIsFull || result.newBatchCreated) {
                 log.trace("Waking up the sender since topic {} partition {} is either full or getting a new batch", record.topic(), partition);
+                /**
+                 * 唤醒sender, 发送消息
+                 */
                 this.sender.wakeup();
             }
+
             return result.future;
             // handling exceptions and record the errors;
             // for API exceptions return them in the future,

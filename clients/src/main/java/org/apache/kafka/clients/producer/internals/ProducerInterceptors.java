@@ -56,6 +56,9 @@ public class ProducerInterceptors<K, V> implements Closeable {
      */
     public ProducerRecord<K, V> onSend(ProducerRecord<K, V> record) {
         ProducerRecord<K, V> interceptRecord = record;
+        /**
+         * 拦截器处理消息，便于拓展功能吧
+         */
         for (ProducerInterceptor<K, V> interceptor : this.interceptors) {
             try {
                 interceptRecord = interceptor.onSend(interceptRecord);

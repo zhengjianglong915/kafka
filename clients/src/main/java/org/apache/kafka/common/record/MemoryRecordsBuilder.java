@@ -718,6 +718,7 @@ public class MemoryRecordsBuilder {
      * re-allocation in the underlying byte buffer stream.
      */
     public boolean hasRoomFor(long timestamp, ByteBuffer key, ByteBuffer value, Header[] headers) {
+        // 已经满了
         if (isFull())
             return false;
 

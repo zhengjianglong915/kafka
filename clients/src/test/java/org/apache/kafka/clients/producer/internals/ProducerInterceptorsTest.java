@@ -54,6 +54,9 @@ public class ProducerInterceptorsTest {
 
         @Override
         public ProducerRecord<Integer, String> onSend(ProducerRecord<Integer, String> record) {
+            /**
+             * 计数
+             */
             onSendCount++;
             if (throwExceptionOnSend)
                 throw new KafkaException("Injected exception in AppendProducerInterceptor.onSend");

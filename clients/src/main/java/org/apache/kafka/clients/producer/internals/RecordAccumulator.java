@@ -187,15 +187,24 @@ public final class RecordAccumulator {
                                      long maxTimeToBlock) throws InterruptedException {
         // We keep track of the number of appending thread to make sure we do not miss batches in
         // abortIncompleteBatches().
+        /**
+         * 计数器自增
+         */
         appendsInProgress.incrementAndGet();
         ByteBuffer buffer = null;
         if (headers == null) headers = Record.EMPTY_HEADERS;
         try {
             // check if we have an in-progress batch
+            /**
+             * 获取或创建一个dq
+             */
             Deque<ProducerBatch> dq = getOrCreateDeque(tp);
             synchronized (dq) {
                 if (closed)
                     throw new IllegalStateException("Cannot send after the producer is closed.");
+                /**
+                 * 尝试追加
+                 */
                 RecordAppendResult appendResult = tryAppend(timestamp, key, value, headers, callback, dq);
                 if (appendResult != null)
                     return appendResult;
@@ -254,8 +263,14 @@ public final class RecordAccumulator {
      */
     private RecordAppendResult tryAppend(long timestamp, byte[] key, byte[] value, Header[] headers,
                                          Callback callback, Deque<ProducerBatch> deque) {
+        /**
+         * 获取最新的一个
+         */
         ProducerBatch last = deque.peekLast();
         if (last != null) {
+            /**
+             * 试着追加
+             */
             FutureRecordMetadata future = last.tryAppend(timestamp, key, value, headers, callback, time.milliseconds());
             if (future == null)
                 last.closeForRecordAppends();
@@ -591,9 +606,13 @@ public final class RecordAccumulator {
     }
 
     /**
+     * 经典
      * Get the deque for the given topic-partition, creating it if necessary.
      */
     private Deque<ProducerBatch> getOrCreateDeque(TopicPartition tp) {
+        /**
+         * 获取partition对象的双向队列
+         */
         Deque<ProducerBatch> d = this.batches.get(tp);
         if (d != null)
             return d;

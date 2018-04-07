@@ -54,6 +54,9 @@ public class Producer extends Thread {
                     messageStr), new DemoCallBack(startTime, messageNo, messageStr));
             } else { // Send synchronously
                 try {
+                    /**
+                     * 发送消息
+                     */
                     producer.send(new ProducerRecord<>(topic,
                         messageNo,
                         messageStr)).get();
