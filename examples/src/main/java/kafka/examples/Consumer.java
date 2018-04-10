@@ -46,7 +46,13 @@ public class Consumer extends ShutdownableThread {
 
     @Override
     public void doWork() {
+        /**
+         * 订阅模式
+         */
         consumer.subscribe(Collections.singletonList(this.topic));
+        /**
+         * 拉取
+         */
         ConsumerRecords<Integer, String> records = consumer.poll(1000);
         for (ConsumerRecord<Integer, String> record : records) {
             System.out.println("Received message: (" + record.key() + ", " + record.value() + ") at offset " + record.offset());

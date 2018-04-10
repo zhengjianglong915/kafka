@@ -227,6 +227,7 @@ public class NetworkClient implements KafkaClient {
 
         if (connectionStates.canConnect(node.idString(), now))
             // if we are interested in sending to a node and we don't have a connection to it, initiate one
+            // 初始化连接
             initiateConnect(node, now);
 
         return false;
@@ -431,7 +432,13 @@ public class NetworkClient implements KafkaClient {
                 request,
                 send,
                 now);
+        /**
+         * 加入缓存
+         */
         this.inFlightRequests.add(inFlightRequest);
+        /**
+         * 将请求暂存节点对应的网络通道中，还没有真正地将客户端请求发送出去
+         */
         selector.send(inFlightRequest.send);
     }
 
@@ -450,7 +457,11 @@ public class NetworkClient implements KafkaClient {
             // If there are aborted sends because of unsupported version exceptions or disconnects,
             // handle them immediately without waiting for Selector#poll.
             List<ClientResponse> responses = new ArrayList<>();
+            /**
+             *
+             */
             handleAbortedSends(responses);
+
             completeResponses(responses);
             return responses;
         }
@@ -465,12 +476,32 @@ public class NetworkClient implements KafkaClient {
         // process completed actions
         long updatedNow = this.time.milliseconds();
         List<ClientResponse> responses = new ArrayList<>();
+        /**
+         * 完成发送的处理器
+         */
         handleCompletedSends(responses, updatedNow);
+        /**
+         * 完成接收的处理器
+         */
         handleCompletedReceives(responses, updatedNow);
+        /**
+         * 断开连接处理器
+         */
         handleDisconnections(responses, updatedNow);
+        /**
+         * 处理连接的处理器
+         */
         handleConnections();
+
         handleInitiateApiVersionRequests(updatedNow);
+        /**
+         * 超时请求的处理器
+         */
         handleTimedOutRequests(responses, updatedNow);
+
+        /**
+         * 上面几个处理完成都会往response中添加数据，有了响应以后开始调请求的回调函数
+         */
         completeResponses(responses);
 
         return responses;
@@ -656,6 +687,7 @@ public class NetworkClient implements KafkaClient {
     }
 
     /**
+     * 处理已经完成的请求，如果不期望得到响应，就认为整个请求完成
      * Handle any completed request send. In particular if no response is expected consider the request complete.
      *
      * @param responses The list of responses to update
@@ -666,6 +698,9 @@ public class NetworkClient implements KafkaClient {
         for (Send send : this.selector.completedSends()) {
             InFlightRequest request = this.inFlightRequests.lastSent(send.destination());
             if (!request.expectResponse) {
+                /**
+                 * 移除
+                 */
                 this.inFlightRequests.completeLastSent(send.destination());
                 responses.add(request.completed(null, now));
             }
@@ -681,6 +716,7 @@ public class NetworkClient implements KafkaClient {
     private void handleCompletedReceives(List<ClientResponse> responses, long now) {
         for (NetworkReceive receive : this.selector.completedReceives()) {
             String source = receive.source();
+            // 接收到完整的响应了，就可以直接移除了
             InFlightRequest req = inFlightRequests.completeNext(source);
             Struct responseStruct = parseStructMaybeUpdateThrottleTimeMetrics(receive.payload(), req.header,
                 throttleTimeSensor, now);
@@ -789,6 +825,9 @@ public class NetworkClient implements KafkaClient {
         try {
             log.debug("Initiating connection to node {}", node);
             this.connectionStates.connecting(nodeConnectionId, now);
+            /**
+             * 创建连接
+             */
             selector.connect(nodeConnectionId,
                              new InetSocketAddress(node.host(), node.port()),
                              this.socketSendBuffer,

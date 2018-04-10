@@ -63,13 +63,17 @@ public class SubscriptionState {
 
     /* the pattern user has requested */
     private Pattern subscribedPattern;
-
+    /**
+     * 用户注册的主题
+     */
     /* the list of topics the user has requested */
     private Set<String> subscription;
 
     /* the list of topics the group has subscribed to (set only for the leader on join group completion) */
     private final Set<String> groupSubscription;
-
+    /**
+     * 分区到分区状态映射关系
+     */
     /* the partitions that are currently assigned, note that the order of partition matters (see FetchBuilder for more details) */
     private final PartitionStates<TopicPartitionState> assignment;
 
@@ -260,6 +264,11 @@ public class SubscriptionState {
         return state;
     }
 
+    /**
+     * 重新设置TopicPartition 的offset
+     * @param tp
+     * @param offset
+     */
     public void seek(TopicPartition tp, long offset) {
         assignedState(tp).seek(offset);
     }

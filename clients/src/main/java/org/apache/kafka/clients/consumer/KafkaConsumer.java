@@ -901,6 +901,7 @@ public class KafkaConsumer<K, V> implements Consumer<K, V> {
                 throw new IllegalArgumentException("Topic collection to subscribe to cannot be null");
             } else if (topics.isEmpty()) {
                 // treat subscribing to empty topic list as the same as unsubscribing
+                // 取消订阅
                 this.unsubscribe();
             } else {
                 for (String topic : topics) {
@@ -911,7 +912,13 @@ public class KafkaConsumer<K, V> implements Consumer<K, V> {
                 throwIfNoAssignorsConfigured();
 
                 log.debug("Subscribed to topic(s): {}", Utils.join(topics, ", "));
+                /**
+                 * 订阅
+                 */
                 this.subscriptions.subscribe(new HashSet<>(topics), listener);
+                /**
+                 *
+                 */
                 metadata.setTopics(subscriptions.groupSubscription());
             }
         } finally {
@@ -1045,6 +1052,7 @@ public class KafkaConsumer<K, V> implements Consumer<K, V> {
             if (partitions == null) {
                 throw new IllegalArgumentException("Topic partition collection to assign to cannot be null");
             } else if (partitions.isEmpty()) {
+                // 取消订阅
                 this.unsubscribe();
             } else {
                 Set<String> topics = new HashSet<>();
@@ -1060,6 +1068,9 @@ public class KafkaConsumer<K, V> implements Consumer<K, V> {
                 this.coordinator.maybeAutoCommitOffsetsAsync(time.milliseconds());
 
                 log.debug("Subscribed to partition(s): {}", Utils.join(partitions, ", "));
+                /**
+                 * 分配
+                 */
                 this.subscriptions.assignFromUser(new HashSet<>(partitions));
                 metadata.setTopics(topics);
             }
@@ -1145,16 +1156,29 @@ public class KafkaConsumer<K, V> implements Consumer<K, V> {
         client.maybeTriggerWakeup();
 
         long startMs = time.milliseconds();
+        /**
+         * 加入消费者组等
+         */
         coordinator.poll(startMs, timeout);
 
         // Lookup positions of assigned partitions
         boolean hasAllFetchPositions = updateFetchPositions();
 
+        /**
+         * 获取记录。 可能是前一轮的结果
+         */
         // if data is available already, return it immediately
         Map<TopicPartition, List<ConsumerRecord<K, V>>> records = fetcher.fetchedRecords();
+
+        /**
+         * 有数据则直接返回
+         */
         if (!records.isEmpty())
             return records;
 
+        /**
+         * 没有数据，发起拉取请求
+         */
         // send any new fetches (won't resend pending fetches)
         fetcher.sendFetches();
 
@@ -1167,6 +1191,9 @@ public class KafkaConsumer<K, V> implements Consumer<K, V> {
         if (!hasAllFetchPositions && pollTimeout > retryBackoffMs)
             pollTimeout = retryBackoffMs;
 
+        /**
+         * 通过客户端轮询把拉取请求发送出去
+         */
         client.poll(pollTimeout, nowMs, new PollCondition() {
             @Override
             public boolean shouldBlock() {
@@ -1181,6 +1208,7 @@ public class KafkaConsumer<K, V> implements Consumer<K, V> {
         if (coordinator.needRejoin())
             return Collections.emptyMap();
 
+        // 获取数据
         return fetcher.fetchedRecords();
     }
 

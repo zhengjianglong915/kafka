@@ -313,6 +313,9 @@ public abstract class AbstractCoordinator implements Closeable {
         // when sending heartbeats and does not necessarily require us to rejoin the group.
         ensureCoordinatorReady();
         startHeartbeatThreadIfNeeded();
+        /**
+         * 加入组
+         */
         joinGroupIfNeeded();
     }
 
@@ -348,6 +351,7 @@ public abstract class AbstractCoordinator implements Closeable {
     // visible for testing. Joins the group without starting the heartbeat thread.
     void joinGroupIfNeeded() {
         while (needRejoin() || rejoinIncomplete()) {
+            // 准备
             ensureCoordinatorReady();
 
             // call onJoinPrepare if needed. We set a flag to make sure that we do not call it a second
@@ -360,10 +364,17 @@ public abstract class AbstractCoordinator implements Closeable {
                 needsJoinPrepare = false;
             }
 
+            /**
+             * 采用异步方式
+             */
             RequestFuture<ByteBuffer> future = initiateJoinGroup();
+
             client.poll(future);
 
             if (future.succeeded()) {
+                /**
+                 * 完成加入
+                 */
                 onJoinComplete(generation.generationId, generation.memberId, generation.protocol, future.value());
 
                 // We reset the join group future only after the completion callback returns. This ensures

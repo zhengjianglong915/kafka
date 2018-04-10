@@ -157,9 +157,15 @@ public class Sender implements Runnable {
     public void run() {
         log.debug("Starting Kafka producer I/O thread.");
 
+        /**
+         * 这里不断循环
+         */
         // main loop, runs until close is called
         while (running) {
             try {
+                /**
+                 * 指定超时时间
+                 */
                 run(time.milliseconds());
             } catch (Exception e) {
                 log.error("Uncaught error in kafka producer I/O thread: ", e);
@@ -235,13 +241,26 @@ public class Sender implements Runnable {
             }
         }
 
+        /**
+         * 发送消息
+         */
         long pollTimeout = sendProducerData(now);
+
+        /**
+         * 轮询动作，执行网络请求。执行真正的发送
+         */
         client.poll(pollTimeout, now);
     }
 
     private long sendProducerData(long now) {
+        /**
+         *
+         */
         Cluster cluster = metadata.fetch();
 
+        /**
+         * 获取所有准备发送的分区
+         */
         // get the list of partitions with data ready to send
         RecordAccumulator.ReadyCheckResult result = this.accumulator.ready(cluster, now);
 
@@ -255,17 +274,27 @@ public class Sender implements Runnable {
             this.metadata.requestUpdate();
         }
 
+        /**
+         * 建立到主副本，移除还没准备好的节点
+         */
         // remove any nodes we aren't ready to send to
         Iterator<Node> iter = result.readyNodes.iterator();
         long notReadyTimeout = Long.MAX_VALUE;
         while (iter.hasNext()) {
             Node node = iter.next();
+            /**
+             * ready 准备建立连接
+             */
             if (!this.client.ready(node, now)) {
                 iter.remove();
                 notReadyTimeout = Math.min(notReadyTimeout, this.client.connectionDelay(node, now));
             }
         }
 
+        /**
+         * 读取记录收集器，返回每个主副本节点对应批记录，每个批记录对应一个分区
+         * 这里获取的值已经是按 nodeId分类了
+         */
         // create produce requests
         Map<Integer, List<ProducerBatch>> batches = this.accumulator.drain(cluster, result.readyNodes,
                 this.maxRequestSize, now);
@@ -306,6 +335,10 @@ public class Sender implements Runnable {
             // otherwise the select time will be the time difference between now and the metadata expiry time;
             pollTimeout = 0;
         }
+
+        /**
+         * 发送
+         */
         sendProduceRequests(batches, now);
 
         return pollTimeout;
@@ -643,11 +676,15 @@ public class Sender implements Runnable {
      * Transfer the record batches into a list of produce requests on a per-node basis
      */
     private void sendProduceRequests(Map<Integer, List<ProducerBatch>> collated, long now) {
+        /**
+         * 这里已经按nodeId分类了
+         */
         for (Map.Entry<Integer, List<ProducerBatch>> entry : collated.entrySet())
             sendProduceRequest(now, entry.getKey(), acks, requestTimeout, entry.getValue());
     }
 
     /**
+     * 发送线程为每一个目标节点创建一个客户端请求
      * Create a produce request from the given record batches
      */
     private void sendProduceRequest(long now, int destination, short acks, int timeout, List<ProducerBatch> batches) {
@@ -665,6 +702,7 @@ public class Sender implements Runnable {
         }
 
         for (ProducerBatch batch : batches) {
+            // 每个RecordBatch都有唯一的
             TopicPartition tp = batch.topicPartition;
             MemoryRecords records = batch.records();
 
@@ -694,7 +732,14 @@ public class Sender implements Runnable {
         };
 
         String nodeId = Integer.toString(destination);
+
+        /**
+         * 构造请求
+         */
         ClientRequest clientRequest = client.newClientRequest(nodeId, requestBuilder, now, acks != 0, callback);
+        /**
+         * 发送
+         */
         client.send(clientRequest, now);
         log.trace("Sent produce request to {}: {}", nodeId, requestBuilder);
     }

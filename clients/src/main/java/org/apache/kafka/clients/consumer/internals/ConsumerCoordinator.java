@@ -216,7 +216,13 @@ public final class ConsumerCoordinator extends AbstractCoordinator {
         if (assignor == null)
             throw new IllegalStateException("Coordinator selected invalid assignment protocol: " + assignmentStrategy);
 
+        /**
+         * 得到分区结构
+         */
         Assignment assignment = ConsumerProtocol.deserializeAssignment(assignmentBuffer);
+        /**
+         * 设置订阅的分区
+         */
         subscriptions.assignFromSubscribed(assignment.partitions());
 
         // check if the assignment contains some topics that were not in the original
@@ -235,7 +241,9 @@ public final class ConsumerCoordinator extends AbstractCoordinator {
             Set<String> newJoinedSubscription = new HashSet<>(joinedSubscription);
             newSubscription.addAll(addedTopics);
             newJoinedSubscription.addAll(addedTopics);
-
+            /**
+             * 按模式订阅
+             */
             this.subscriptions.subscribeFromPattern(newSubscription);
             this.joinedSubscription = newJoinedSubscription;
         }
@@ -286,7 +294,9 @@ public final class ConsumerCoordinator extends AbstractCoordinator {
                 // that we have matched the pattern against the cluster's topics at least once before joining.
                 if (subscriptions.hasPatternSubscription())
                     client.ensureFreshMetadata();
-
+                /**
+                 * 加入组
+                 */
                 ensureActiveGroup();
                 now = time.milliseconds();
             }
@@ -411,6 +421,9 @@ public final class ConsumerCoordinator extends AbstractCoordinator {
         log.info("Revoking previously assigned partitions {}", subscriptions.assignedPartitions());
         try {
             Set<TopicPartition> revoked = new HashSet<>(subscriptions.assignedPartitions());
+            /**
+             * 在这里执行更新
+             */
             listener.onPartitionsRevoked(revoked);
         } catch (WakeupException | InterruptException e) {
             throw e;
@@ -419,9 +432,18 @@ public final class ConsumerCoordinator extends AbstractCoordinator {
         }
 
         isLeader = false;
+        /**
+         * 重置
+         */
         subscriptions.resetGroupSubscription();
     }
 
+    /**
+     * 1. 必须是AUTO_TOPICS或AUTO_PATTERN
+     * 2. 如果assignmentSnapshot内容发送了改变
+     * 3. 或者subscription发生了改变
+     * @return
+     */
     @Override
     public boolean needRejoin() {
         if (!subscriptions.partitionsAutoAssigned())

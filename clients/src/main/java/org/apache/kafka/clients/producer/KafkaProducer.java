@@ -874,6 +874,7 @@ public class KafkaProducer<K, V> implements Producer<K, V> {
                 log.trace("Waking up the sender since topic {} partition {} is either full or getting a new batch", record.topic(), partition);
                 /**
                  * 唤醒sender, 发送消息
+                 * 新创建的，或者是当前批次已满
                  */
                 this.sender.wakeup();
             }

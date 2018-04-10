@@ -210,10 +210,16 @@ public final class RecordAccumulator {
                     return appendResult;
             }
 
+            /**
+             * 尝试分配一个新的batch
+             */
             // we don't have an in-progress record batch try to allocate a new batch
             byte maxUsableMagic = apiVersions.maxUsableProduceMagic();
             int size = Math.max(this.batchSize, AbstractRecords.estimateSizeInBytesUpperBound(maxUsableMagic, compression, key, value, headers));
             log.trace("Allocating a new {} byte message buffer for topic {} partition {}", size, tp.topic(), tp.partition());
+            /**
+             * BufferPool 中分配
+             */
             buffer = free.allocate(size, maxTimeToBlock);
             synchronized (dq) {
                 // Need to check if producer is closed again after grabbing the dequeue lock.
@@ -230,12 +236,18 @@ public final class RecordAccumulator {
                 ProducerBatch batch = new ProducerBatch(tp, recordsBuilder, time.milliseconds());
                 FutureRecordMetadata future = Utils.notNull(batch.tryAppend(timestamp, key, value, headers, callback, time.milliseconds()));
 
+                /**
+                 * 增加一个batch
+                 */
                 dq.addLast(batch);
                 incomplete.add(batch);
 
                 // Don't deallocate this buffer in the finally block as it's being used in the record batch
                 buffer = null;
 
+                /**
+                 * dq.size() > 1也当做满了
+                 */
                 return new RecordAppendResult(future, dq.size() > 1 || batch.isFull(), true);
             }
         } finally {
@@ -269,7 +281,7 @@ public final class RecordAccumulator {
         ProducerBatch last = deque.peekLast();
         if (last != null) {
             /**
-             * 试着追加
+             * 试着追加 TODO
              */
             FutureRecordMetadata future = last.tryAppend(timestamp, key, value, headers, callback, time.milliseconds());
             if (future == null)
