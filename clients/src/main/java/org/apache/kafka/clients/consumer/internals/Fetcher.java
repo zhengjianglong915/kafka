@@ -186,6 +186,9 @@ public class Fetcher<K, V> implements SubscriptionState.Listener, Closeable {
      * @return number of fetches sent
      */
     public int sendFetches() {
+        /**
+         * 请求转换为 节点的映射，可以按节点发送，而不是partition发送
+         */
         Map<Node, FetchSessionHandler.FetchRequestData> fetchRequestMap = prepareFetchRequests();
         for (Map.Entry<Node, FetchSessionHandler.FetchRequestData> entry : fetchRequestMap.entrySet()) {
             final Node fetchTarget = entry.getKey();
@@ -224,6 +227,9 @@ public class Fetcher<K, V> implements SubscriptionState.Listener, Closeable {
 
                                 log.debug("Fetch {} at offset {} for partition {} returned fetch data {}",
                                         isolationLevel, fetchOffset, partition, fetchData);
+                                /**
+                                 * 存放到队列中
+                                 */
                                 completedFetches.add(new CompletedFetch(partition, fetchOffset, fetchData, metricAggregator,
                                         resp.requestHeader().apiVersion()));
                             }
@@ -480,12 +486,17 @@ public class Fetcher<K, V> implements SubscriptionState.Listener, Closeable {
         try {
             while (recordsRemaining > 0) {
                 if (nextInLineRecords == null || nextInLineRecords.isFetched) {
+
                     CompletedFetch completedFetch = completedFetches.peek();
                     if (completedFetch == null) break;
 
                     nextInLineRecords = parseCompletedFetch(completedFetch);
+                    // 拉取，不阻塞
                     completedFetches.poll();
                 } else {
+                    /**
+                     * 获取并更新拉取状态
+                     */
                     List<ConsumerRecord<K, V>> records = fetchRecords(nextInLineRecords, recordsRemaining);
                     TopicPartition partition = nextInLineRecords.partition;
                     if (!records.isEmpty()) {
@@ -530,6 +541,9 @@ public class Fetcher<K, V> implements SubscriptionState.Listener, Closeable {
                 long nextOffset = partitionRecords.nextFetchOffset;
                 log.trace("Returning fetched records at offset {} for assigned partition {} and update " +
                         "position to {}", position, partitionRecords.partition, nextOffset);
+                /**
+                 * 更新
+                 */
                 subscriptions.position(partitionRecords.partition, nextOffset);
 
                 Long partitionLag = subscriptions.partitionLag(partitionRecords.partition, isolationLevel);
@@ -924,6 +938,9 @@ public class Fetcher<K, V> implements SubscriptionState.Listener, Closeable {
 
                 if (partition.highWatermark >= 0) {
                     log.trace("Updating high watermark for partition {} to {}", tp, partition.highWatermark);
+                    /**
+                     * 更新highWatermark
+                     */
                     subscriptions.updateHighWatermark(tp, partition.highWatermark);
                 }
 
@@ -1234,9 +1251,13 @@ public class Fetcher<K, V> implements SubscriptionState.Listener, Closeable {
         }
     }
 
+    /**
+     * 拉取的数据
+     */
     private static class CompletedFetch {
         private final TopicPartition partition;
         private final long fetchedOffset;
+        // 数据
         private final FetchResponse.PartitionData partitionData;
         private final FetchResponseMetricAggregator metricAggregator;
         private final short responseVersion;

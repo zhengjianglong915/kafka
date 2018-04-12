@@ -1122,6 +1122,9 @@ public class KafkaConsumer<K, V> implements Consumer<K, V> {
             long start = time.milliseconds();
             long remaining = timeout;
             do {
+                /**
+                 * 获取消息
+                 */
                 Map<TopicPartition, List<ConsumerRecord<K, V>>> records = pollOnce(remaining);
                 if (!records.isEmpty()) {
                     // before returning the fetched records, we can send off the next round of fetches
@@ -1132,11 +1135,12 @@ public class KafkaConsumer<K, V> implements Consumer<K, V> {
                     // wakeups or any other errors to be triggered prior to returning the fetched records.
                     if (fetcher.sendFetches() > 0 || client.hasPendingRequests())
                         client.pollNoWakeup();
-
+                    // 拦截器处理
                     return this.interceptors.onConsume(new ConsumerRecords<>(records));
                 }
 
                 long elapsed = time.milliseconds() - start;
+                // 剩余时间
                 remaining = timeout - elapsed;
             } while (remaining > 0);
 
@@ -1158,9 +1162,14 @@ public class KafkaConsumer<K, V> implements Consumer<K, V> {
         long startMs = time.milliseconds();
         /**
          * 加入消费者组等
+         * 1. 提交定时偏移量任务的执行
          */
         coordinator.poll(startMs, timeout);
 
+        /**
+         * 更新拉取偏移量
+         *
+         */
         // Lookup positions of assigned partitions
         boolean hasAllFetchPositions = updateFetchPositions();
 
@@ -1287,7 +1296,9 @@ public class KafkaConsumer<K, V> implements Consumer<K, V> {
         }
     }
 
+
     /**
+     * 异步提交
      * Commit offsets returned on the last {@link #poll(long) poll()} for all the subscribed list of topics and partition.
      * Same as {@link #commitAsync(OffsetCommitCallback) commitAsync(null)}
      */
@@ -1813,13 +1824,22 @@ public class KafkaConsumer<K, V> implements Consumer<K, V> {
         // coordinator lookup if there are partitions which have missing positions, so
         // a consumer with manually assigned partitions can avoid a coordinator dependence
         // by always ensuring that assigned partitions have an initial position.
+        /**
+         * 更新
+         */
         coordinator.refreshCommittedOffsetsIfNeeded();
 
+        /**
+         * 重置那些还没有偏移量的分区
+         */
         // If there are partitions still needing a position and a reset policy is defined,
         // request reset using the default policy. If no reset strategy is defined and there
         // are partitions with a missing position, then we will raise an exception.
         subscriptions.resetMissingPositions();
 
+        /**
+         * 对所有的已分配的分区重置offset
+         */
         // Finally send an asynchronous request to lookup and update the positions of any
         // partitions which are awaiting reset.
         fetcher.resetOffsetsIfNeeded();

@@ -292,8 +292,10 @@ public abstract class AbstractCoordinator implements Closeable {
             }
             // Awake the heartbeat thread if needed
             if (heartbeat.shouldHeartbeat(now)) {
+                // 唤醒
                 notify();
             }
+
             heartbeat.poll(now);
         }
     }

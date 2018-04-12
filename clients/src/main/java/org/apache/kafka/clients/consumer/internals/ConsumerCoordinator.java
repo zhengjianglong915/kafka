@@ -84,6 +84,9 @@ public final class ConsumerCoordinator extends AbstractCoordinator {
     private Set<String> joinedSubscription;
     private MetadataSnapshot metadataSnapshot;
     private MetadataSnapshot assignmentSnapshot;
+    /**
+     * 下一次提交时间
+     */
     private long nextAutoCommitDeadline;
 
     /**
@@ -280,20 +283,26 @@ public final class ConsumerCoordinator extends AbstractCoordinator {
      * @param now current time in milliseconds
      */
     public void poll(long now, long remainingMs) {
+        /**
+         * 提交offset
+         * 从定时任务中获取可执行的提交任务，如果没有则直接返回不阻塞
+         */
         invokeCompletedOffsetCommitCallbacks();
 
+        // 采用订阅方式，需要自动分配分区
         if (subscriptions.partitionsAutoAssigned()) {
             if (coordinatorUnknown()) {
                 ensureCoordinatorReady();
                 now = time.milliseconds();
             }
 
+            // 需要重新分配
             if (needRejoin()) {
                 // due to a race condition between the initial metadata fetch and the initial rebalance,
                 // we need to ensure that the metadata is fresh before joining initially. This ensures
                 // that we have matched the pattern against the cluster's topics at least once before joining.
                 if (subscriptions.hasPatternSubscription())
-                    client.ensureFreshMetadata();
+                    client.ensureFreshMetadata(); // 刷新数据
                 /**
                  * 加入组
                  */
@@ -301,6 +310,7 @@ public final class ConsumerCoordinator extends AbstractCoordinator {
                 now = time.milliseconds();
             }
 
+            // 心跳检测，定时任务
             pollHeartbeat(now);
         } else {
             // For manually assigned partitions, if there are no ready nodes, await metadata.
@@ -318,6 +328,9 @@ public final class ConsumerCoordinator extends AbstractCoordinator {
             }
         }
 
+        /**
+         * 创建提交offset的定时任务
+         */
         maybeAutoCommitOffsetsAsync(now);
     }
 
@@ -465,11 +478,17 @@ public final class ConsumerCoordinator extends AbstractCoordinator {
      */
     public void refreshCommittedOffsetsIfNeeded() {
         Set<TopicPartition> missingFetchPositions = subscriptions.missingFetchPositions();
+        /**
+         * 获取这些没有拉取偏移量的分区的 偏移量
+         */
         Map<TopicPartition, OffsetAndMetadata> offsets = fetchCommittedOffsets(missingFetchPositions);
         for (Map.Entry<TopicPartition, OffsetAndMetadata> entry : offsets.entrySet()) {
             TopicPartition tp = entry.getKey();
             long offset = entry.getValue().offset();
             log.debug("Setting offset for partition {} to the committed offset {}", tp, offset);
+            /**
+             * 更新
+             */
             this.subscriptions.seek(tp, offset);
         }
     }
@@ -486,6 +505,9 @@ public final class ConsumerCoordinator extends AbstractCoordinator {
         while (true) {
             ensureCoordinatorReady();
 
+            /**
+             * 发送请求
+             */
             // contact coordinator to fetch committed offsets
             RequestFuture<Map<TopicPartition, OffsetAndMetadata>> future = sendOffsetFetchRequest(partitions);
             client.poll(future);
@@ -521,6 +543,8 @@ public final class ConsumerCoordinator extends AbstractCoordinator {
     // visible for testing
     void invokeCompletedOffsetCommitCallbacks() {
         while (true) {
+            // 从队列获取OffsetCommitCompletion 处理器
+            // poll 方式不阻塞，如果没有直接返回
             OffsetCommitCompletion completion = completedOffsetCommits.poll();
             if (completion == null)
                 break;
@@ -532,6 +556,9 @@ public final class ConsumerCoordinator extends AbstractCoordinator {
         invokeCompletedOffsetCommitCallbacks();
 
         if (!coordinatorUnknown()) {
+            /**
+             * 异步提交
+             */
             doCommitOffsetsAsync(offsets, callback);
         } else {
             // we don't know the current coordinator, so try to find it and then send the commit
@@ -545,7 +572,11 @@ public final class ConsumerCoordinator extends AbstractCoordinator {
                 @Override
                 public void onSuccess(Void value) {
                     pendingAsyncCommits.decrementAndGet();
+
                     doCommitOffsetsAsync(offsets, callback);
+                    /**
+                     *
+                     */
                     client.pollNoWakeup();
                 }
 
@@ -564,6 +595,11 @@ public final class ConsumerCoordinator extends AbstractCoordinator {
         client.pollNoWakeup();
     }
 
+    /**
+     * 创建一次下次执行的提交任务
+     * @param offsets
+     * @param callback
+     */
     private void doCommitOffsetsAsync(final Map<TopicPartition, OffsetAndMetadata> offsets, final OffsetCommitCallback callback) {
         RequestFuture<Void> future = sendOffsetCommitRequest(offsets);
         final OffsetCommitCallback cb = callback == null ? defaultOffsetCommitCallback : callback;
@@ -572,7 +608,7 @@ public final class ConsumerCoordinator extends AbstractCoordinator {
             public void onSuccess(Void value) {
                 if (interceptors != null)
                     interceptors.onCommit(offsets);
-
+                // 加入队列中
                 completedOffsetCommits.add(new OffsetCommitCompletion(cb, offsets, null));
             }
 
@@ -582,7 +618,7 @@ public final class ConsumerCoordinator extends AbstractCoordinator {
 
                 if (e instanceof RetriableException)
                     commitException = new RetriableCommitFailedException(e);
-
+                // 加入队列
                 completedOffsetCommits.add(new OffsetCommitCompletion(cb, offsets, commitException));
             }
         });
@@ -642,6 +678,9 @@ public final class ConsumerCoordinator extends AbstractCoordinator {
     }
 
     public void maybeAutoCommitOffsetsAsync(long now) {
+        /**
+         * 如果是自动提交并且当前时间大于提交时间，则创建一个下一次自动提交的任务，并存到定时任务队列中
+         */
         if (autoCommitEnabled && now >= nextAutoCommitDeadline) {
             this.nextAutoCommitDeadline = now + autoCommitIntervalMs;
             doAutoCommitOffsetsAsync();
@@ -649,9 +688,13 @@ public final class ConsumerCoordinator extends AbstractCoordinator {
     }
 
     private void doAutoCommitOffsetsAsync() {
+        // 获取订阅状态
         Map<TopicPartition, OffsetAndMetadata> allConsumedOffsets = subscriptions.allConsumed();
         log.debug("Sending asynchronous auto-commit of offsets {}", allConsumedOffsets);
 
+        /**
+         * 提交偏移量
+         */
         commitOffsetsAsync(allConsumedOffsets, new OffsetCommitCallback() {
             @Override
             public void onComplete(Map<TopicPartition, OffsetAndMetadata> offsets, Exception exception) {
@@ -659,6 +702,7 @@ public final class ConsumerCoordinator extends AbstractCoordinator {
                     if (exception instanceof RetriableException) {
                         log.debug("Asynchronous auto-commit of offsets {} failed due to retriable error: {}", offsets,
                                 exception);
+                        // 下一次的结束时间
                         nextAutoCommitDeadline = Math.min(time.milliseconds() + retryBackoffMs, nextAutoCommitDeadline);
                     } else {
                         log.warn("Asynchronous auto-commit of offsets {} failed: {}", offsets, exception.getMessage());

@@ -270,6 +270,7 @@ public class SubscriptionState {
      * @param offset
      */
     public void seek(TopicPartition tp, long offset) {
+        // 更新
         assignedState(tp).seek(offset);
     }
 
@@ -323,6 +324,10 @@ public class SubscriptionState {
         assignedState(tp).lastStableOffset = lastStableOffset;
     }
 
+    /**
+     * 做了格式转换
+     * @return
+     */
     public Map<TopicPartition, OffsetAndMetadata> allConsumed() {
         Map<TopicPartition, OffsetAndMetadata> allConsumed = new HashMap<>();
         for (PartitionStates.PartitionState<TopicPartitionState> state : assignment.partitionStates()) {
@@ -366,6 +371,10 @@ public class SubscriptionState {
         return true;
     }
 
+    /**
+     * 获取没有拉取偏移量的partition
+     * @return
+     */
     public Set<TopicPartition> missingFetchPositions() {
         Set<TopicPartition> missing = new HashSet<>();
         for (PartitionStates.PartitionState<TopicPartitionState> state : assignment.partitionStates()) {
@@ -375,6 +384,9 @@ public class SubscriptionState {
         return missing;
     }
 
+    /**
+     * 按照重置策略进行重置没有偏移量的分区，如果没有重置策略，则报错
+     */
     public void resetMissingPositions() {
         final Set<TopicPartition> partitionsWithNoOffsets = new HashSet<>();
         for (PartitionStates.PartitionState<TopicPartitionState> state : assignment.partitionStates()) {
@@ -392,6 +404,11 @@ public class SubscriptionState {
             throw new NoOffsetForPartitionException(partitionsWithNoOffsets);
     }
 
+    /**
+     * 找到需要重新设置offset的partition
+     * @param nowMs
+     * @return
+     */
     public Set<TopicPartition> partitionsNeedingReset(long nowMs) {
         Set<TopicPartition> partitions = new HashSet<>();
         for (PartitionStates.PartitionState<TopicPartitionState> state : assignment.partitionStates()) {
@@ -455,12 +472,18 @@ public class SubscriptionState {
         return map;
     }
 
+    /**
+     * 分区状态，包括拉取偏移量和消费偏移量的状态
+     */
     private static class TopicPartitionState {
+        // 最新拉取偏移量和提交偏移量, 这两个偏移量用同一个
         private Long position; // last consumed position
         private Long highWatermark; // the high watermark from last fetch
         private Long logStartOffset; // the log start offset
         private Long lastStableOffset;
+        // 是否暂停
         private boolean paused;  // whether this partition has been paused by the user
+        // 重置策略
         private OffsetResetStrategy resetStrategy;  // the strategy to use if the offset needs resetting
         private Long nextAllowedRetryTimeMs;
 
