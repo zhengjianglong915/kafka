@@ -1825,7 +1825,7 @@ public class KafkaConsumer<K, V> implements Consumer<K, V> {
         // a consumer with manually assigned partitions can avoid a coordinator dependence
         // by always ensuring that assigned partitions have an initial position.
         /**
-         * 更新
+         * 更新那些还没有偏移量的分区
          */
         coordinator.refreshCommittedOffsetsIfNeeded();
 

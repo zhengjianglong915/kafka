@@ -50,6 +50,10 @@ import java.util.regex.Pattern;
  * Note that pause state as well as fetch/consumed positions are not preserved when partition
  * assignment is changed whether directly by the user or through a group rebalance.
  */
+
+/**
+ * 消费者订阅状态，为客户端提供了两种消费模式
+ */
 public class SubscriptionState {
     private static final String SUBSCRIPTION_EXCEPTION_MESSAGE =
             "Subscription to topics, partitions and pattern are mutually exclusive";
@@ -68,7 +72,7 @@ public class SubscriptionState {
      */
     /* the list of topics the user has requested */
     private Set<String> subscription;
-
+    // 组订阅
     /* the list of topics the group has subscribed to (set only for the leader on join group completion) */
     private final Set<String> groupSubscription;
     /**
@@ -76,13 +80,13 @@ public class SubscriptionState {
      */
     /* the partitions that are currently assigned, note that the order of partition matters (see FetchBuilder for more details) */
     private final PartitionStates<TopicPartitionState> assignment;
-
+    // offset重置策略
     /* Default offset reset strategy */
     private final OffsetResetStrategy defaultResetStrategy;
 
     /* Listeners provide a hook for internal state cleanup (e.g. metrics) on assignment changes */
     private final List<Listener> listeners = new ArrayList<>();
-
+    // 消费再平衡监听器
     /* User-provided listener to be invoked when assignment changes */
     private ConsumerRebalanceListener rebalanceListener;
 
@@ -168,6 +172,7 @@ public class SubscriptionState {
                 TopicPartitionState state = assignment.stateValue(partition);
                 if (state == null)
                     state = new TopicPartitionState();
+                // 加入
                 partitionToState.put(partition, state);
             }
             this.assignment.set(partitionToState);

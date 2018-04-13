@@ -535,7 +535,14 @@ public class Fetcher<K, V> implements SubscriptionState.Listener, Closeable {
                     partitionRecords.partition);
         } else {
             long position = subscriptions.position(partitionRecords.partition);
+            /**
+             * 这里为什么是等号？ 说明当前的位置已经消费了，需要重新拉取新的
+             * 每次提交以后position总是等于nextFetchOffset
+             */
             if (partitionRecords.nextFetchOffset == position) {
+                /**
+                 * 获取下一批
+                 */
                 List<ConsumerRecord<K, V>> partRecords = partitionRecords.fetchRecords(maxRecords);
 
                 long nextOffset = partitionRecords.nextFetchOffset;
@@ -557,6 +564,9 @@ public class Fetcher<K, V> implements SubscriptionState.Listener, Closeable {
 
                 return partRecords;
             } else {
+                /**
+                 * 说明
+                 */
                 // these records aren't next in line based on the last consumed position, ignore them
                 // they must be from an obsolete request
                 log.debug("Ignoring fetched records for {} at offset {} since the current position is {}",
@@ -1045,6 +1055,9 @@ public class Fetcher<K, V> implements SubscriptionState.Listener, Closeable {
         private RecordBatch currentBatch;
         private Record lastRecord;
         private CloseableIterator<Record> records;
+        /**
+         * 下一个offset, 从1开始计数？还是0开始计数
+         */
         private long nextFetchOffset;
         private boolean isFetched = false;
         private Exception cachedRecordException = null;
@@ -1179,6 +1192,9 @@ public class Fetcher<K, V> implements SubscriptionState.Listener, Closeable {
                     // use the last record to do deserialization again.
                     if (cachedRecordException == null) {
                         corruptLastRecord = true;
+                        /**
+                         * 下一批记录
+                         */
                         lastRecord = nextFetchedRecord();
                         corruptLastRecord = false;
                     }
@@ -1187,6 +1203,10 @@ public class Fetcher<K, V> implements SubscriptionState.Listener, Closeable {
                     records.add(parseRecord(partition, currentBatch, lastRecord));
                     recordsRead++;
                     bytesRead += lastRecord.sizeInBytes();
+
+                    /**
+                     * 更新了
+                     */
                     nextFetchOffset = lastRecord.offset() + 1;
                     // In some cases, the deserialization may have thrown an exception and the retry may succeed,
                     // we allow user to move forward in this case.

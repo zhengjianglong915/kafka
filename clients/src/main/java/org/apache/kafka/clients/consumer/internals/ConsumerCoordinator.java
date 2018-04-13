@@ -553,6 +553,9 @@ public final class ConsumerCoordinator extends AbstractCoordinator {
     }
 
     public void commitOffsetsAsync(final Map<TopicPartition, OffsetAndMetadata> offsets, final OffsetCommitCallback callback) {
+        /**
+         * 执行
+          */
         invokeCompletedOffsetCommitCallbacks();
 
         if (!coordinatorUnknown()) {
@@ -601,12 +604,16 @@ public final class ConsumerCoordinator extends AbstractCoordinator {
      * @param callback
      */
     private void doCommitOffsetsAsync(final Map<TopicPartition, OffsetAndMetadata> offsets, final OffsetCommitCallback callback) {
+        /**
+         * 发送提交
+         */
         RequestFuture<Void> future = sendOffsetCommitRequest(offsets);
         final OffsetCommitCallback cb = callback == null ? defaultOffsetCommitCallback : callback;
         future.addListener(new RequestFutureListener<Void>() {
             @Override
             public void onSuccess(Void value) {
                 if (interceptors != null)
+
                     interceptors.onCommit(offsets);
                 // 加入队列中
                 completedOffsetCommits.add(new OffsetCommitCompletion(cb, offsets, null));
