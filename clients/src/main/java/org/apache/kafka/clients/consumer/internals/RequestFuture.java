@@ -43,9 +43,10 @@ import java.util.concurrent.atomic.AtomicReference;
  * @param <T> Return type of the result (Can be Void if there is no response)
  */
 public class RequestFuture<T> implements ConsumerNetworkClient.PollCondition {
-
+    // 判断是否完成
     private static final Object INCOMPLETE_SENTINEL = new Object();
     private final AtomicReference<Object> result = new AtomicReference<>(INCOMPLETE_SENTINEL);
+    // 监听器列表
     private final ConcurrentLinkedQueue<RequestFutureListener<T>> listeners = new ConcurrentLinkedQueue<>();
     private final CountDownLatch completedLatch = new CountDownLatch(1);
 
@@ -122,8 +123,14 @@ public class RequestFuture<T> implements ConsumerNetworkClient.PollCondition {
             if (value instanceof RuntimeException)
                 throw new IllegalArgumentException("The argument to complete can not be an instance of RuntimeException");
 
+            /**
+             * 设置值
+             */
             if (!result.compareAndSet(INCOMPLETE_SENTINEL, value))
                 throw new IllegalStateException("Invalid attempt to complete a request future which is already complete");
+            /**
+             * 调用成功方法 onSuccess
+             */
             fireSuccess();
         } finally {
             completedLatch.countDown();
@@ -164,6 +171,9 @@ public class RequestFuture<T> implements ConsumerNetworkClient.PollCondition {
             RequestFutureListener<T> listener = listeners.poll();
             if (listener == null)
                 break;
+            /**
+             * 调用监听器中的onSuccess
+             */
             listener.onSuccess(value);
         }
     }

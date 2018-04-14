@@ -462,6 +462,9 @@ public class NetworkClient implements KafkaClient {
              */
             handleAbortedSends(responses);
 
+            /**
+             * 对请求结果进行处理
+             */
             completeResponses(responses);
             return responses;
         }
@@ -510,6 +513,9 @@ public class NetworkClient implements KafkaClient {
     private void completeResponses(List<ClientResponse> responses) {
         for (ClientResponse response : responses) {
             try {
+                /**
+                 * 调用response的Complete方法
+                 */
                 response.onComplete();
             } catch (Exception e) {
                 log.error("Uncaught error in request completion:", e);

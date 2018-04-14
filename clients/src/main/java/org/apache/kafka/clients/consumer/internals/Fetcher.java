@@ -219,9 +219,10 @@ public class Fetcher<K, V> implements SubscriptionState.Listener, Closeable {
 
                             Set<TopicPartition> partitions = new HashSet<>(response.responseData().keySet());
                             FetchResponseMetricAggregator metricAggregator = new FetchResponseMetricAggregator(sensors, partitions);
-                            // 因为拉取请求包括多个分区，所以返回结果页有多个分区
+                            // 因为拉取请求包括多个分区，所以返回结果也有多个分区
                             for (Map.Entry<TopicPartition, FetchResponse.PartitionData> entry : response.responseData().entrySet()) {
                                 TopicPartition partition = entry.getKey();
+                                //
                                 long fetchOffset = data.sessionPartitions().get(partition).fetchOffset;
                                 FetchResponse.PartitionData fetchData = entry.getValue();
 
@@ -487,6 +488,7 @@ public class Fetcher<K, V> implements SubscriptionState.Listener, Closeable {
             while (recordsRemaining > 0) {
                 /**
                  * 没有下一条数据记录，则尝试从阻塞对列中获取。并复制给nextInLineRecords，在下一次迭代中消费
+                 * nextInLineRecords表示一个分区，里面存储了该分区的很多条消息
                  */
                 if (nextInLineRecords == null || nextInLineRecords.isFetched) {
 
@@ -499,7 +501,7 @@ public class Fetcher<K, V> implements SubscriptionState.Listener, Closeable {
                 } else {
                     /**
                      * 如果上一轮迭代已经将这个变量获取到了，直接对消息进行一些简单处理
-                     *
+                     * nextInLineRecords是针对一个partition的
                      */
                     //  将消息格式进行转换并更新拉取状态 position
                     List<ConsumerRecord<K, V>> records = fetchRecords(nextInLineRecords, recordsRemaining);
@@ -548,6 +550,9 @@ public class Fetcher<K, V> implements SubscriptionState.Listener, Closeable {
              *
              */
             if (partitionRecords.nextFetchOffset == position) {
+                /**
+                 * 每次最多获取maxRecords 记录
+                 */
                 List<ConsumerRecord<K, V>> partRecords = partitionRecords.fetchRecords(maxRecords);
                 // nextFetchOffset实际是拉取数据的fetchedOffset
                 long nextOffset = partitionRecords.nextFetchOffset;
@@ -841,12 +846,25 @@ public class Fetcher<K, V> implements SubscriptionState.Listener, Closeable {
         }
     }
 
+    /**
+     * 获取那些可以拉取的partition
+     * 1. partition已经分配
+     * 2. partition的拉取数据都消费完成了
+     * @return
+     */
     private List<TopicPartition> fetchablePartitions() {
         Set<TopicPartition> exclude = new HashSet<>();
         List<TopicPartition> fetchable = subscriptions.fetchablePartitions();
+
+        /**
+         * nextInLineRecords刚从队列取出来的，也要判断是否消费完成
+         */
         if (nextInLineRecords != null && !nextInLineRecords.isFetched) {
             exclude.add(nextInLineRecords.partition);
         }
+        /**
+         * completedFetches队列中的都是没有被消费完成的
+         */
         for (CompletedFetch completedFetch : completedFetches) {
             exclude.add(completedFetch.partition);
         }
@@ -861,6 +879,10 @@ public class Fetcher<K, V> implements SubscriptionState.Listener, Closeable {
     private Map<Node, FetchSessionHandler.FetchRequestData> prepareFetchRequests() {
         Cluster cluster = metadata.fetch();
         Map<Node, FetchSessionHandler.Builder> fetchable = new LinkedHashMap<>();
+        /**
+         * fetchablePartitions
+         * 如果存在没有被消费的partition，则不会再拉取。只有消费完成才会拉取
+         */
         for (TopicPartition partition : fetchablePartitions()) {
             Node node = cluster.leaderFor(partition);
             if (node == null) {
@@ -902,6 +924,7 @@ public class Fetcher<K, V> implements SubscriptionState.Listener, Closeable {
     }
 
     /**
+     * 将completedFetch转换为PartitionRecords
      * The callback for fetch completion
      */
     private PartitionRecords parseCompletedFetch(CompletedFetch completedFetch) {
@@ -1047,6 +1070,7 @@ public class Fetcher<K, V> implements SubscriptionState.Listener, Closeable {
     }
 
     private class PartitionRecords {
+        // 分区信息
         private final TopicPartition partition;
         private final CompletedFetch completedFetch;
         private final Iterator<? extends RecordBatch> batches;
@@ -1057,9 +1081,10 @@ public class Fetcher<K, V> implements SubscriptionState.Listener, Closeable {
         private int bytesRead;
         private RecordBatch currentBatch;
         private Record lastRecord;
+        // 记录集
         private CloseableIterator<Record> records;
         /**
-         * 下一个offset, 从1开始计数？还是0开始计数
+         * 分区记录拉取的偏移量
          */
         private long nextFetchOffset;
         private boolean isFetched = false;
@@ -1072,7 +1097,7 @@ public class Fetcher<K, V> implements SubscriptionState.Listener, Closeable {
             this.partition = partition;
             this.completedFetch = completedFetch;
             this.batches = batches;
-            // 表示了拉取的偏移量，也是表示
+            // 表示了拉取的偏移量
             this.nextFetchOffset = completedFetch.fetchedOffset;
             this.abortedProducerIds = new HashSet<>();
             this.abortedTransactions = abortedTransactions(completedFetch.partitionData);
@@ -1154,6 +1179,9 @@ public class Fetcher<K, V> implements SubscriptionState.Listener, Closeable {
                             log.debug("Skipping aborted record batch from partition {} with producerId {} and " +
                                           "offsets {} to {}",
                                       partition, producerId, currentBatch.baseOffset(), currentBatch.lastOffset());
+                            /**
+                             * 更新
+                             */
                             nextFetchOffset = currentBatch.nextOffset();
                             continue;
                         }
@@ -1171,6 +1199,9 @@ public class Fetcher<K, V> implements SubscriptionState.Listener, Closeable {
                         if (!currentBatch.isControlBatch()) {
                             return record;
                         } else {
+                            /**
+                             * 加1
+                             */
                             // Increment the next fetch offset when we skip a control batch.
                             nextFetchOffset = record.offset() + 1;
                         }
@@ -1191,6 +1222,9 @@ public class Fetcher<K, V> implements SubscriptionState.Listener, Closeable {
 
             List<ConsumerRecord<K, V>> records = new ArrayList<>();
             try {
+                /**
+                 * 最多获取maxRecords条数据
+                 */
                 for (int i = 0; i < maxRecords; i++) {
                     // Only move to next record if there was no exception in the last fetch. Otherwise we should
                     // use the last record to do deserialization again.

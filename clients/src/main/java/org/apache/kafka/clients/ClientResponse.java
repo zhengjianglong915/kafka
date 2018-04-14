@@ -97,6 +97,9 @@ public class ClientResponse {
     }
 
     public void onComplete() {
+        /**
+         * 调用callBack
+         */
         if (callback != null)
             callback.onComplete(this);
     }

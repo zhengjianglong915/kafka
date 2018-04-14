@@ -68,6 +68,9 @@ public class ConsumerNetworkClient implements Closeable {
     // We do not need high throughput, so use a fair lock to try to avoid starvation
     private final ReentrantLock lock = new ReentrantLock(true);
 
+    /**
+     * 阻塞队列
+     */
     // when requests complete, they are transferred to this queue prior to invocation. The purpose
     // is to avoid invoking them while holding this object's monitor which can open the door for deadlocks.
     private final ConcurrentLinkedQueue<RequestFutureCompletionHandler> pendingCompletion = new ConcurrentLinkedQueue<>();
@@ -111,6 +114,9 @@ public class ConsumerNetworkClient implements Closeable {
         RequestFutureCompletionHandler completionHandler = new RequestFutureCompletionHandler();
         ClientRequest clientRequest = client.newClientRequest(node.idString(), requestBuilder, now, true,
                 completionHandler);
+        /**
+         * 加入到unsent中
+         */
         unsent.put(node, clientRequest);
 
         // wakeup the client in case it is blocking in poll so that we can send the queued request
@@ -240,6 +246,9 @@ public class ConsumerNetworkClient implements Closeable {
      */
     public void poll(long timeout, long now, PollCondition pollCondition, boolean disableWakeup) {
         // there may be handlers which need to be invoked if we woke up the previous call to poll
+        /**
+         * 从存放异步结果RequestFutureCompletionHandler的阻塞队列pendingCompletion中获取结果并调用完成处理方法
+         */
         firePendingCompletedRequests();
 
         lock.lock();
@@ -247,6 +256,7 @@ public class ConsumerNetworkClient implements Closeable {
             // Handle async disconnects prior to attempting any sends
             handlePendingDisconnects();
 
+            //
             // send all the requests we can send now
             trySend(now);
 
@@ -257,12 +267,19 @@ public class ConsumerNetworkClient implements Closeable {
                 // if there are no requests in flight, do not block longer than the retry backoff
                 if (client.inFlightRequestCount() == 0)
                     timeout = Math.min(timeout, retryBackoffMs);
+                /**
+                 * 处理结果， 调用complete方法，将异步结果处理对象存放到pendingCompletion中
+                 */
                 client.poll(Math.min(maxPollTimeoutMs, timeout), now);
                 now = time.milliseconds();
             } else {
+
                 client.poll(0, now);
             }
 
+            /**
+             * 检查连接
+             */
             // handle any disconnects by failing the active requests. note that disconnects must
             // be checked immediately following poll since any subsequent call to client.ready()
             // will reset the disconnect status
@@ -382,10 +399,16 @@ public class ConsumerNetworkClient implements Closeable {
     private void firePendingCompletedRequests() {
         boolean completedRequestsFired = false;
         for (;;) {
+            /**
+             * 处理器结果
+             */
             RequestFutureCompletionHandler completionHandler = pendingCompletion.poll();
             if (completionHandler == null)
                 break;
 
+            /**
+             * fireCompletion会调用feture的complete方法
+             */
             completionHandler.fireCompletion();
             completedRequestsFired = true;
         }
@@ -471,9 +494,9 @@ public class ConsumerNetworkClient implements Closeable {
             Iterator<ClientRequest> iterator = unsent.requestIterator(node);
             while (iterator.hasNext()) {
                 ClientRequest request = iterator.next();
-                if (client.ready(node, now)) {
-                    client.send(request, now);
-                    iterator.remove();
+                if (client.ready(node, now)) { // 已经连接上节点, 并且准备发送
+                    client.send(request, now); // 只有在clientPoll()是才真正发送
+                    iterator.remove();  // 已发送，移除。考虑gc问题
                     requestsSent = true;
                 }
             }
