@@ -219,7 +219,7 @@ public class Fetcher<K, V> implements SubscriptionState.Listener, Closeable {
 
                             Set<TopicPartition> partitions = new HashSet<>(response.responseData().keySet());
                             FetchResponseMetricAggregator metricAggregator = new FetchResponseMetricAggregator(sensors, partitions);
-
+                            // 因为拉取请求包括多个分区，所以返回结果页有多个分区
                             for (Map.Entry<TopicPartition, FetchResponse.PartitionData> entry : response.responseData().entrySet()) {
                                 TopicPartition partition = entry.getKey();
                                 long fetchOffset = data.sessionPartitions().get(partition).fetchOffset;
@@ -485,6 +485,9 @@ public class Fetcher<K, V> implements SubscriptionState.Listener, Closeable {
 
         try {
             while (recordsRemaining > 0) {
+                /**
+                 * 没有下一条数据记录，则尝试从阻塞对列中获取。并复制给nextInLineRecords，在下一次迭代中消费
+                 */
                 if (nextInLineRecords == null || nextInLineRecords.isFetched) {
 
                     CompletedFetch completedFetch = completedFetches.peek();
@@ -495,8 +498,10 @@ public class Fetcher<K, V> implements SubscriptionState.Listener, Closeable {
                     completedFetches.poll();
                 } else {
                     /**
-                     * 获取并更新拉取状态
+                     * 如果上一轮迭代已经将这个变量获取到了，直接对消息进行一些简单处理
+                     *
                      */
+                    //  将消息格式进行转换并更新拉取状态 position
                     List<ConsumerRecord<K, V>> records = fetchRecords(nextInLineRecords, recordsRemaining);
                     TopicPartition partition = nextInLineRecords.partition;
                     if (!records.isEmpty()) {
@@ -534,22 +539,23 @@ public class Fetcher<K, V> implements SubscriptionState.Listener, Closeable {
             log.debug("Not returning fetched records for assigned partition {} since it is no longer fetchable",
                     partitionRecords.partition);
         } else {
+            /**
+             * 获取当前已经拉取的 position
+             */
             long position = subscriptions.position(partitionRecords.partition);
             /**
-             * 这里为什么是等号？ 说明当前的位置已经消费了，需要重新拉取新的
-             * 每次提交以后position总是等于nextFetchOffset
+             * 判断分区记录集的拉取偏移量是不是和订阅状态的position变量是否相同
+             *
              */
             if (partitionRecords.nextFetchOffset == position) {
-                /**
-                 * 获取下一批
-                 */
                 List<ConsumerRecord<K, V>> partRecords = partitionRecords.fetchRecords(maxRecords);
-
+                // nextFetchOffset实际是拉取数据的fetchedOffset
                 long nextOffset = partitionRecords.nextFetchOffset;
                 log.trace("Returning fetched records at offset {} for assigned partition {} and update " +
                         "position to {}", position, partitionRecords.partition, nextOffset);
                 /**
-                 * 更新
+                 * 更新订阅状态分区状态的拉取偏移量信息，即position
+                 * 表示当前已经拉取得到的position
                  */
                 subscriptions.position(partitionRecords.partition, nextOffset);
 
@@ -564,9 +570,6 @@ public class Fetcher<K, V> implements SubscriptionState.Listener, Closeable {
 
                 return partRecords;
             } else {
-                /**
-                 * 说明
-                 */
                 // these records aren't next in line based on the last consumed position, ignore them
                 // they must be from an obsolete request
                 log.debug("Ignoring fetched records for {} at offset {} since the current position is {}",
@@ -1069,6 +1072,7 @@ public class Fetcher<K, V> implements SubscriptionState.Listener, Closeable {
             this.partition = partition;
             this.completedFetch = completedFetch;
             this.batches = batches;
+            // 表示了拉取的偏移量，也是表示
             this.nextFetchOffset = completedFetch.fetchedOffset;
             this.abortedProducerIds = new HashSet<>();
             this.abortedTransactions = abortedTransactions(completedFetch.partitionData);

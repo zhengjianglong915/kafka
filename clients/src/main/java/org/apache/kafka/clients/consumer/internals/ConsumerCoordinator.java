@@ -292,6 +292,9 @@ public final class ConsumerCoordinator extends AbstractCoordinator {
         // 采用订阅方式，需要自动分配分区
         if (subscriptions.partitionsAutoAssigned()) {
             if (coordinatorUnknown()) {
+                /**
+                 * 确保连上协调者
+                 */
                 ensureCoordinatorReady();
                 now = time.milliseconds();
             }

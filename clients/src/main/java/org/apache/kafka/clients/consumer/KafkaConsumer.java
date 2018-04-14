@@ -1217,7 +1217,9 @@ public class KafkaConsumer<K, V> implements Consumer<K, V> {
         if (coordinator.needRejoin())
             return Collections.emptyMap();
 
-        // 获取数据
+        /**
+         * 获取数据
+         */
         return fetcher.fetchedRecords();
     }
 
