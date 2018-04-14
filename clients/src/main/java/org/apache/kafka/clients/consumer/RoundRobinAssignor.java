@@ -55,17 +55,37 @@ import java.util.TreeSet;
  */
 public class RoundRobinAssignor extends AbstractPartitionAssignor {
 
+    /**
+     * 按循环方式分配
+     * @param partitionsPerTopic The number of partitions for each subscribed topic. Topics not in metadata will be excluded
+     *                           from this map.
+     * @param subscriptions Map from the memberId to their respective topic subscription
+     * @return
+     */
     @Override
     public Map<String, List<TopicPartition>> assign(Map<String, Integer> partitionsPerTopic,
                                                     Map<String, Subscription> subscriptions) {
+        // 初始化
         Map<String, List<TopicPartition>> assignment = new HashMap<>();
         for (String memberId : subscriptions.keySet())
             assignment.put(memberId, new ArrayList<TopicPartition>());
 
+        /**
+         * 先按key进行排序，即按照消费者memberId
+         */
         CircularIterator<String> assigner = new CircularIterator<>(Utils.sorted(subscriptions.keySet()));
+
+        /**
+         * allPartitionsSorted 安装topic排序。
+         *
+         */
         for (TopicPartition partition : allPartitionsSorted(partitionsPerTopic, subscriptions)) {
             final String topic = partition.topic();
+            /**
+             * 轮询找到一个消费者，订阅了该主题。则分配
+             */
             while (!subscriptions.get(assigner.peek()).topics().contains(topic))
+                // 轮询，可以看做是一个循环链。到最后一个消费者后，又回到第一个。
                 assigner.next();
             assignment.get(assigner.next()).add(partition);
         }
@@ -73,16 +93,29 @@ public class RoundRobinAssignor extends AbstractPartitionAssignor {
     }
 
 
+    /**
+     * 排序， 按topic排序。 得到每个topic
+     * @param partitionsPerTopic
+     * @param subscriptions
+     * @return
+     */
     public List<TopicPartition> allPartitionsSorted(Map<String, Integer> partitionsPerTopic,
                                                     Map<String, Subscription> subscriptions) {
+        /**
+         * 按topic排序
+         */
         SortedSet<String> topics = new TreeSet<>();
         for (Subscription subscription : subscriptions.values())
             topics.addAll(subscription.topics());
 
         List<TopicPartition> allPartitions = new ArrayList<>();
         for (String topic : topics) {
+            /**
+             * 每个topic对应的partition数量
+             */
             Integer numPartitionsForTopic = partitionsPerTopic.get(topic);
             if (numPartitionsForTopic != null)
+                // 为每个topic创建指定的partition
                 allPartitions.addAll(AbstractPartitionAssignor.partitions(topic, numPartitionsForTopic));
         }
         return allPartitions;

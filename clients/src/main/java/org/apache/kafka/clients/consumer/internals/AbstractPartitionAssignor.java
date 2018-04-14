@@ -29,6 +29,7 @@ import java.util.Map;
 import java.util.Set;
 
 /**
+ * 抽象的分区分配器类
  * Abstract assignor implementation which does some common grunt work (in particular collecting
  * partition counts which are always needed in assignors).
  */
@@ -42,14 +43,20 @@ public abstract class AbstractPartitionAssignor implements PartitionAssignor {
      * @param subscriptions Map from the memberId to their respective topic subscription
      * @return Map from each member to the list of partitions assigned to them.
      */
-    public abstract Map<String, List<TopicPartition>> assign(Map<String, Integer> partitionsPerTopic,
-                                                             Map<String, Subscription> subscriptions);
+    public abstract Map<String, List<TopicPartition>> assign(Map<String, Integer> partitionsPerTopic, // 每个主题的分区数量
+                                                             Map<String, Subscription> subscriptions); // 每个消费者订阅的主题列表
 
     @Override
     public Subscription subscription(Set<String> topics) {
         return new Subscription(new ArrayList<>(topics));
     }
 
+    /**
+     *
+     * @param metadata 集群元数据
+     * @param subscriptions 所有消费者的订阅信息
+     * @return
+     */
     @Override
     public Map<String, Assignment> assign(Cluster metadata, Map<String, Subscription> subscriptions) {
         Set<String> allSubscribedTopics = new HashSet<>();
@@ -65,6 +72,9 @@ public abstract class AbstractPartitionAssignor implements PartitionAssignor {
                 log.debug("Skipping assignment for topic {} since no metadata is available", topic);
         }
 
+        /**
+         * 留给子类处理， key每个成员的id, val是分配的partition
+         */
         Map<String, List<TopicPartition>> rawAssignments = assign(partitionsPerTopic, subscriptions);
 
         // this class maintains no user data, so just wrap the results

@@ -220,7 +220,7 @@ public final class ConsumerCoordinator extends AbstractCoordinator {
             throw new IllegalStateException("Coordinator selected invalid assignment protocol: " + assignmentStrategy);
 
         /**
-         * 得到分区结构
+         * 协调者返回给消费者的分区使一个字节类型，需要信息反序列化
          */
         Assignment assignment = ConsumerProtocol.deserializeAssignment(assignmentBuffer);
         /**
@@ -256,6 +256,7 @@ public final class ConsumerCoordinator extends AbstractCoordinator {
         this.metadata.setTopics(subscriptions.groupSubscription());
         client.ensureFreshMetadata();
 
+        // 更新assignment的内部状态
         // give the assignor a chance to update internal state based on the received assignment
         assignor.onAssignment(assignment);
 
@@ -267,6 +268,9 @@ public final class ConsumerCoordinator extends AbstractCoordinator {
         log.info("Setting newly assigned partitions {}", subscriptions.assignedPartitions());
         try {
             Set<TopicPartition> assigned = new HashSet<>(subscriptions.assignedPartitions());
+            /**
+             * 消费者再平衡监视器
+             */
             listener.onPartitionsAssigned(assigned);
         } catch (WakeupException | InterruptException e) {
             throw e;
@@ -352,19 +356,39 @@ public final class ConsumerCoordinator extends AbstractCoordinator {
         return Math.min(nextAutoCommitDeadline - now, timeToNextHeartbeat(now));
     }
 
+    /**
+     * 主消费者执行分区分配，返回每个消费者的分区结果
+     * @param leaderId The id of the leader (which is this member)
+     * @param assignmentStrategy
+     * @param allSubscriptions
+     * @return
+     */
     @Override
     protected Map<String, ByteBuffer> performAssignment(String leaderId,
                                                         String assignmentStrategy,
                                                         Map<String, ByteBuffer> allSubscriptions) {
+        /**
+         * 根据协调者执行消费组协议，获取唯一的分区分配器
+         */
         PartitionAssignor assignor = lookupAssignor(assignmentStrategy);
         if (assignor == null)
             throw new IllegalStateException("Coordinator selected invalid assignment protocol: " + assignmentStrategy);
 
         Set<String> allSubscribedTopics = new HashSet<>();
+        // subscriptions从所有消费者的订阅元数据中解析出来的
         Map<String, Subscription> subscriptions = new HashMap<>();
         for (Map.Entry<String, ByteBuffer> subscriptionEntry : allSubscriptions.entrySet()) {
+            /**
+             * 反序列化消费者的订阅信息
+             */
             Subscription subscription = ConsumerProtocol.deserializeSubscription(subscriptionEntry.getValue());
+            /**
+             * 消费者订阅信息的键是消费者的成员编号，值是订阅的主题
+             */
             subscriptions.put(subscriptionEntry.getKey(), subscription);
+            /**
+             * 所有的订阅主题
+             */
             allSubscribedTopics.addAll(subscription.topics());
         }
 
@@ -381,6 +405,10 @@ public final class ConsumerCoordinator extends AbstractCoordinator {
 
         log.debug("Performing assignment using strategy {} with subscriptions {}", assignor.name(), subscriptions);
 
+        /**
+         * 根据分配策略，为所有消费者分配分区。
+         * 返回值表示返回每个消费者分配的结果
+         */
         Map<String, Assignment> assignment = assignor.assign(metadata.fetch(), subscriptions);
 
         // user-customized assignor may have created some topics that are not in the subscription list
@@ -418,6 +446,9 @@ public final class ConsumerCoordinator extends AbstractCoordinator {
 
         log.debug("Finished assignment for group: {}", assignment);
 
+        /**
+         * 因为分区分配器返回的结果是Assignment对象，要转换为字节数组返回给协调者
+         */
         Map<String, ByteBuffer> groupAssignment = new HashMap<>();
         for (Map.Entry<String, Assignment> assignmentEntry : assignment.entrySet()) {
             ByteBuffer buffer = ConsumerProtocol.serializeAssignment(assignmentEntry.getValue());
@@ -430,8 +461,12 @@ public final class ConsumerCoordinator extends AbstractCoordinator {
     @Override
     protected void onJoinPrepare(int generation, String memberId) {
         // commit offsets prior to rebalance if auto-commit enabled
+        /**
+         * 自动提交偏移量
+         */
         maybeAutoCommitOffsetsSync(rebalanceTimeoutMs);
 
+        // 加入组之前，消费者已经有的分区，这些分区将被清除，触发自定义监听器的回调
         // execute the user's callback before rebalance
         ConsumerRebalanceListener listener = subscriptions.rebalanceListener();
         log.info("Revoking previously assigned partitions {}", subscriptions.assignedPartitions());
@@ -447,6 +482,7 @@ public final class ConsumerCoordinator extends AbstractCoordinator {
             log.error("User provided listener {} failed on partition revocation", listener.getClass().getName(), e);
         }
 
+        // 这里为什么设置为false ?
         isLeader = false;
         /**
          * 重置
