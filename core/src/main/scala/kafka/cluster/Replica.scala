@@ -25,6 +25,14 @@ import org.apache.kafka.common.TopicPartition
 import org.apache.kafka.common.errors.OffsetOutOfRangeException
 import org.apache.kafka.common.utils.Time
 
+/**
+  *
+  * @param brokerId 代理节点编号
+  * @param topicPartition  副本所属分区
+  * @param time
+  * @param initialHighWatermarkValue
+  * @param log
+  */
 class Replica(val brokerId: Int,
               val topicPartition: TopicPartition,
               time: Time = Time.SYSTEM,

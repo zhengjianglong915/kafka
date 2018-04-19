@@ -294,7 +294,11 @@ class GroupCoordinator(val brokerId: Int,
                       resetAndPropagateAssignmentError(group, error)
                       maybePrepareRebalance(group)
                     } else {
+                      /**
+                        * 传播消费组的分配结果，并持久化到内部主题中
+                        */
                       setAndPropagateAssignment(group, assignment)
+                      // 更新组状态到"稳定状态"
                       group.transitionTo(Stable)
                     }
                   }
@@ -624,6 +628,9 @@ class GroupCoordinator(val brokerId: Int,
   private def setAndPropagateAssignment(group: GroupMetadata, assignment: Map[String, Array[Byte]]) {
     assert(group.is(CompletingRebalance))
     group.allMemberMetadata.foreach(member => member.assignment = assignment(member.memberId))
+    /**
+      * 调用回调方法，发送"同步组响应"结果给消费者
+      */
     propagateAssignment(group, Errors.NONE)
   }
 
@@ -633,9 +640,13 @@ class GroupCoordinator(val brokerId: Int,
     propagateAssignment(group, error)
   }
 
+  // 调用回调方法，发送"同步组响应"结果给消费者
   private def propagateAssignment(group: GroupMetadata, error: Errors) {
     for (member <- group.allMemberMetadata) {
       if (member.awaitingSyncCallback != null) {
+        /**
+          * 调用回调方法
+          */
         member.awaitingSyncCallback(member.assignment, error)
         member.awaitingSyncCallback = null
 
@@ -683,34 +694,53 @@ class GroupCoordinator(val brokerId: Int,
     heartbeatPurgatory.checkAndComplete(memberKey)
   }
 
+  /**
+    * 加入新成员，执行再平衡
+    * @param rebalanceTimeoutMs
+    * @param sessionTimeoutMs
+    * @param clientId
+    * @param clientHost
+    * @param protocolType
+    * @param protocols
+    * @param group
+    * @param callback
+    * @return
+    */
   private def addMemberAndRebalance(rebalanceTimeoutMs: Int,
-                                    sessionTimeoutMs: Int,
+                                    sessionTimeoutMs: Int, // 会话超时时间
                                     clientId: String,
                                     clientHost: String,
                                     protocolType: String,
                                     protocols: List[(String, Array[Byte])],
-                                    group: GroupMetadata,
+                                    group: GroupMetadata, // 组元素
                                     callback: JoinCallback) = {
     val memberId = clientId + "-" + group.generateMemberIdSuffix
     val member = new MemberMetadata(memberId, group.groupId, clientId, clientHost, rebalanceTimeoutMs,
       sessionTimeoutMs, protocolType, protocols)
-    member.awaitingJoinCallback = callback
+    member.awaitingJoinCallback = callback  // 设置回调方法
     // update the newMemberAdded flag to indicate that the join group can be further delayed
     if (group.is(PreparingRebalance) && group.generationId == 0)
       group.newMemberAdded = true
 
-    group.add(member)
-    maybePrepareRebalance(group)
+    group.add(member) // 加到组里
+    maybePrepareRebalance(group)  // 加了新成员，可能需要重新平衡
     member
   }
 
+  /**
+    * 更新成员，执行再平衡
+    * @param group
+    * @param member
+    * @param protocols 协议
+    * @param callback  回调
+    */
   private def updateMemberAndRebalance(group: GroupMetadata,
                                        member: MemberMetadata,
                                        protocols: List[(String, Array[Byte])],
                                        callback: JoinCallback) {
     member.supportedProtocols = protocols
     member.awaitingJoinCallback = callback
-    maybePrepareRebalance(group)
+    maybePrepareRebalance(group)  // 更新成员后，可能需要重新再平衡
   }
 
   private def maybePrepareRebalance(group: GroupMetadata) {

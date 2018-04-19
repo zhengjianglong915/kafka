@@ -55,6 +55,7 @@ import scala.collection.{Set, mutable}
  *    it marks the topic for deletion retry.
  * @param controller
  */
+// 副本管理器，负责"开始删除副本"的执行
 class TopicDeletionManager(controller: KafkaController,
                            eventManager: ControllerEventManager,
                            zkClient: KafkaZkClient) extends Logging {
@@ -276,6 +277,8 @@ class TopicDeletionManager(controller: KafkaController,
    * 2. Move all alive replicas to ReplicaDeletionStarted state so they can be deleted successfully
    *@param replicasForTopicsToBeDeleted
    */
+  // 不是直接删除作为方法参数的所有副本
+  // 而是选择状态不是"删除"成功的存活副本
   private def startReplicaDeletion(replicasForTopicsToBeDeleted: Set[PartitionAndReplica]) {
     replicasForTopicsToBeDeleted.groupBy(_.topic).keys.foreach { topic =>
       val aliveReplicasForTopic = controllerContext.allLiveReplicas().filter(p => p.topic == topic)
@@ -283,13 +286,16 @@ class TopicDeletionManager(controller: KafkaController,
       val successfullyDeletedReplicas = controller.replicaStateMachine.replicasInState(topic, ReplicaDeletionSuccessful)
       val replicasForDeletionRetry = aliveReplicasForTopic -- successfullyDeletedReplicas
       // move dead replicas directly to failed state
+      // 挂掉的副本（副本所在的代理节点挂掉了）状态转为"删除失败"
       controller.replicaStateMachine.handleStateChanges(deadReplicasForTopic.toSeq, ReplicaDeletionIneligible)
       // send stop replica to all followers that are not in the OfflineReplica state so they stop sending fetch requests to the leader
+      // 待删除的副本状态先转为"下线"，再转为"开始删除"
       controller.replicaStateMachine.handleStateChanges(replicasForDeletionRetry.toSeq, OfflineReplica)
       debug(s"Deletion started for replicas ${replicasForDeletionRetry.mkString(",")}")
       controller.replicaStateMachine.handleStateChanges(replicasForDeletionRetry.toSeq, ReplicaDeletionStarted,
         new Callbacks(stopReplicaResponseCallback = (stopReplicaResponseObj, replicaId) =>
           eventManager.put(controller.TopicDeletionStopReplicaResponseReceived(stopReplicaResponseObj, replicaId))))
+      // 如果有挂掉的副本，则将副本对应的主题加入"无效的主题集合"
       if (deadReplicasForTopic.nonEmpty) {
         debug(s"Dead Replicas (${deadReplicasForTopic.mkString(",")}) found for topic $topic")
         markTopicIneligibleForDeletion(Set(topic))

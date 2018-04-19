@@ -152,6 +152,9 @@ class KafkaController(val config: KafkaConfig, zkClient: KafkaZkClient, time: Ti
    * elector
    */
   def startup() = {
+    /**
+      * 注册一个状态改变事件
+      */
     zkClient.registerStateChangeHandler(new StateChangeHandler {
       override val name: String = StateChangeHandlers.ControllerHandler
       override def afterInitializingSession(): Unit = {
@@ -458,9 +461,18 @@ class KafkaController(val config: KafkaConfig, zkClient: KafkaZkClient, time: Ti
    */
   private def onNewPartitionCreation(newPartitions: Set[TopicPartition]) {
     info(s"New partition creation callback for ${newPartitions.mkString(",")}")
+    /**
+      * 从"不存在分区"状态变为"新建分区"状态
+      */
     partitionStateMachine.handleStateChanges(newPartitions.toSeq, NewPartition)
+    // 副本状态机 从"不存在状态"变为"新建状态"
     replicaStateMachine.handleStateChanges(controllerContext.replicasForPartition(newPartitions).toSeq, NewReplica)
+    /**
+      * 从"新建分区"状态变为"在线分区状态"
+      * 传入了一个分区选举策略
+      */
     partitionStateMachine.handleStateChanges(newPartitions.toSeq, OnlinePartition, Option(OfflinePartitionLeaderElectionStrategy))
+    // 副本状态机 从"新建状态"变为"在线状态"
     replicaStateMachine.handleStateChanges(controllerContext.replicasForPartition(newPartitions).toSeq, OnlineReplica)
   }
 
@@ -1216,7 +1228,9 @@ class KafkaController(val config: KafkaConfig, zkClient: KafkaZkClient, time: Ti
       val curBrokers = zkClient.getAllBrokersInCluster.toSet
       val curBrokerIds = curBrokers.map(_.id)
       val liveOrShuttingDownBrokerIds = controllerContext.liveOrShuttingDownBrokerIds
+      // 上线的节点
       val newBrokerIds = curBrokerIds -- liveOrShuttingDownBrokerIds
+      // 下线的节点
       val deadBrokerIds = liveOrShuttingDownBrokerIds -- curBrokerIds
       val newBrokers = curBrokers.filter(broker => newBrokerIds(broker.id))
       controllerContext.liveBrokers = curBrokers
@@ -1226,6 +1240,7 @@ class KafkaController(val config: KafkaConfig, zkClient: KafkaZkClient, time: Ti
       info(s"Newly added brokers: ${newBrokerIdsSorted.mkString(",")}, " +
         s"deleted brokers: ${deadBrokerIdsSorted.mkString(",")}, all live brokers: ${liveBrokerIdsSorted.mkString(",")}")
 
+      // 添加或删除代理节点，更新控制器通道管理器所管理的节点列表
       newBrokers.foreach(controllerContext.controllerChannelManager.addBroker)
       deadBrokerIds.foreach(controllerContext.controllerChannelManager.removeBroker)
       if (newBrokerIds.nonEmpty)
@@ -1258,11 +1273,17 @@ class KafkaController(val config: KafkaConfig, zkClient: KafkaZkClient, time: Ti
     override def process(): Unit = {
       if (!isActive) return
       val topics = zkClient.getAllTopicsInCluster.toSet
+      // ZK里的主题减去上下文的主题，表示新增的主题
       val newTopics = topics -- controllerContext.allTopics
+      // 删除的主题
       val deletedTopics = controllerContext.allTopics -- topics
       controllerContext.allTopics = topics
 
+      /**
+        * 注册一个PartitionModificationHandler处理器
+        */
       registerPartitionModificationsHandlers(newTopics.toSeq)
+      // 更新上下文对象的分区信息，过滤掉被删除的主题。
       val addedPartitionReplicaAssignment = zkClient.getReplicaAssignmentForTopics(newTopics)
       deletedTopics.foreach(controllerContext.removeTopic)
       addedPartitionReplicaAssignment.foreach {
@@ -1271,6 +1292,7 @@ class KafkaController(val config: KafkaConfig, zkClient: KafkaZkClient, time: Ti
       info(s"New topics: [$newTopics], deleted topics: [$deletedTopics], new partition replica assignment " +
         s"[$addedPartitionReplicaAssignment]")
       if (addedPartitionReplicaAssignment.nonEmpty)
+        // 让控制器处理新增的事件
         onNewPartitionCreation(addedPartitionReplicaAssignment.keySet)
     }
   }
@@ -1297,7 +1319,13 @@ class KafkaController(val config: KafkaConfig, zkClient: KafkaZkClient, time: Ti
     def restorePartitionReplicaAssignment(topic: String, newPartitionReplicaAssignment : immutable.Map[TopicPartition, Seq[Int]]): Unit = {
       info("Restoring the partition replica assignment for topic %s".format(topic))
 
+      /**
+        * 获取topic下的所有partition
+        */
       val existingPartitions = zkClient.getChildren(TopicPartitionsZNode.path(topic))
+      /**
+        * 获取所有的副本
+        */
       val existingPartitionReplicaAssignment = newPartitionReplicaAssignment.filter(p =>
         existingPartitions.contains(p._1.partition.toString))
 
@@ -1326,6 +1354,9 @@ class KafkaController(val config: KafkaConfig, zkClient: KafkaZkClient, time: Ti
           partitionsToBeAdded.foreach { case (topicPartition, assignedReplicas) =>
             controllerContext.updatePartitionReplicaAssignment(topicPartition, assignedReplicas)
           }
+          /**
+            * 创建分区
+            */
           onNewPartitionCreation(partitionsToBeAdded.keySet)
         }
       }
@@ -1519,6 +1550,11 @@ class KafkaController(val config: KafkaConfig, zkClient: KafkaZkClient, time: Ti
 
 }
 
+/**
+  * 代理节点变更的处理器
+  * @param controller
+  * @param eventManager
+  */
 class BrokerChangeHandler(controller: KafkaController, eventManager: ControllerEventManager) extends ZNodeChildChangeHandler {
   override val path: String = BrokerIdsZNode.path
 
@@ -1535,6 +1571,11 @@ class BrokerModificationsHandler(controller: KafkaController, eventManager: Cont
   }
 }
 
+/**
+  * 更改主题的处理器
+  * @param controller
+  * @param eventManager
+  */
 class TopicChangeHandler(controller: KafkaController, eventManager: ControllerEventManager) extends ZNodeChildChangeHandler {
   override val path: String = TopicsZNode.path
 
@@ -1551,6 +1592,12 @@ object LogDirEventNotificationHandler {
   val Version: Long = 1L
 }
 
+/**
+  * 更改分区的处理器
+  * @param controller
+  * @param eventManager
+  * @param topic
+  */
 class PartitionModificationsHandler(controller: KafkaController, eventManager: ControllerEventManager, topic: String) extends ZNodeChangeHandler {
   override val path: String = TopicZNode.path(topic)
 

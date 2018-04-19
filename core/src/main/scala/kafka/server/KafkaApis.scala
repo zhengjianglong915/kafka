@@ -109,13 +109,13 @@ class KafkaApis(val requestChannel: RequestChannel,
         case ApiKeys.STOP_REPLICA => handleStopReplicaRequest(request)
         case ApiKeys.UPDATE_METADATA => handleUpdateMetadataRequest(request)
         case ApiKeys.CONTROLLED_SHUTDOWN => handleControlledShutdownRequest(request)
-        case ApiKeys.OFFSET_COMMIT => handleOffsetCommitRequest(request)
+        case ApiKeys.OFFSET_COMMIT => handleOffsetCommitRequest(request)   // 提交消费进度
         case ApiKeys.OFFSET_FETCH => handleOffsetFetchRequest(request)
         case ApiKeys.FIND_COORDINATOR => handleFindCoordinatorRequest(request)
-        case ApiKeys.JOIN_GROUP => handleJoinGroupRequest(request)
-        case ApiKeys.HEARTBEAT => handleHeartbeatRequest(request)
+        case ApiKeys.JOIN_GROUP => handleJoinGroupRequest(request) // 加入组请求
+        case ApiKeys.HEARTBEAT => handleHeartbeatRequest(request)  // 心跳检测请求
         case ApiKeys.LEAVE_GROUP => handleLeaveGroupRequest(request)
-        case ApiKeys.SYNC_GROUP => handleSyncGroupRequest(request)
+        case ApiKeys.SYNC_GROUP => handleSyncGroupRequest(request)   // 同步组请求
         case ApiKeys.DESCRIBE_GROUPS => handleDescribeGroupRequest(request)
         case ApiKeys.LIST_GROUPS => handleListGroupsRequest(request)
         case ApiKeys.SASL_HANDSHAKE => handleSaslHandshakeRequest(request)
@@ -1232,17 +1232,20 @@ class KafkaApis(val requestChannel: RequestChannel,
           Collections.emptyMap())
       )
     } else {
+      /**
+        * 交给服务端的协调者对象处理消费者加入组请求
+        */
       // let the coordinator to handle join-group
       val protocols = joinGroupRequest.groupProtocols().asScala.map(protocol =>
         (protocol.name, Utils.toArray(protocol.metadata))).toList
       groupCoordinator.handleJoinGroup(
-        joinGroupRequest.groupId,
-        joinGroupRequest.memberId,
-        request.header.clientId,
-        request.session.clientAddress.toString,
-        joinGroupRequest.rebalanceTimeout,
-        joinGroupRequest.sessionTimeout,
-        joinGroupRequest.protocolType,
+        joinGroupRequest.groupId,  // 消费组编号
+        joinGroupRequest.memberId, // 消费者编号
+        request.header.clientId,    // 客户端编号
+        request.session.clientAddress.toString, // 客户端地址
+        joinGroupRequest.rebalanceTimeout, // 再平衡超时时间
+        joinGroupRequest.sessionTimeout,  // 会话超时时间
+        joinGroupRequest.protocolType, // 协议类型
         protocols,
         sendResponseCallback)
     }
@@ -1250,7 +1253,7 @@ class KafkaApis(val requestChannel: RequestChannel,
 
   def handleSyncGroupRequest(request: RequestChannel.Request) {
     val syncGroupRequest = request.body[SyncGroupRequest]
-
+    // 定义回调方法
     def sendResponseCallback(memberState: Array[Byte], error: Errors) {
       sendResponseMaybeThrottle(request, requestThrottleMs =>
         new SyncGroupResponse(requestThrottleMs, error, ByteBuffer.wrap(memberState)))
@@ -1259,6 +1262,7 @@ class KafkaApis(val requestChannel: RequestChannel,
     if (!authorize(request.session, Read, new Resource(Group, syncGroupRequest.groupId()))) {
       sendResponseCallback(Array[Byte](), Errors.GROUP_AUTHORIZATION_FAILED)
     } else {
+      // 给服务端的协调者对象处理消费者的同步请求
       groupCoordinator.handleSyncGroup(
         syncGroupRequest.groupId,
         syncGroupRequest.generationId,

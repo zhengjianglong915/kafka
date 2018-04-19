@@ -113,6 +113,9 @@ class PartitionStateMachine(config: KafkaConfig,
     if (partitions.nonEmpty) {
       try {
         controllerBrokerRequestBatch.newBatch()
+        /**
+          * 状态机--状态变化处理
+          */
         doHandleStateChanges(partitions, targetState, partitionLeaderElectionStrategyOpt)
         controllerBrokerRequestBatch.sendRequestsToBrokers(controllerContext.epoch)
       } catch {
@@ -164,6 +167,9 @@ class PartitionStateMachine(config: KafkaConfig,
         val uninitializedPartitions = validPartitions.filter(partition => partitionState(partition) == NewPartition)
         val partitionsToElectLeader = validPartitions.filter(partition => partitionState(partition) == OfflinePartition || partitionState(partition) == OnlinePartition)
         if (uninitializedPartitions.nonEmpty) {
+          /**
+            * 为分区初始化主副本和ISR
+            */
           val successfulInitializations = initializeLeaderAndIsrForPartitions(uninitializedPartitions)
           successfulInitializations.foreach { partition =>
             stateChangeLog.trace(s"Changed partition $partition from ${partitionState(partition)} to $targetState with state " +
@@ -172,6 +178,9 @@ class PartitionStateMachine(config: KafkaConfig,
           }
         }
         if (partitionsToElectLeader.nonEmpty) {
+          /**
+            * 选举主副本
+            */
           val successfulElections = electLeaderForPartitions(partitionsToElectLeader, partitionLeaderElectionStrategyOpt.get)
           successfulElections.foreach { partition =>
             stateChangeLog.trace(s"Changed partition $partition from ${partitionState(partition)} to $targetState with state " +
@@ -219,6 +228,9 @@ class PartitionStateMachine(config: KafkaConfig,
       partition -> leaderIsrAndControllerEpoch
     }.toMap
     val createResponses = try {
+      /**
+        * 调用ZK创建分区节点
+        */
       zkClient.createTopicPartitionStatesRaw(leaderIsrAndControllerEpochs)
     } catch {
       case e: Exception =>

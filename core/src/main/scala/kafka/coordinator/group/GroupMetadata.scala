@@ -172,9 +172,9 @@ private[group] class GroupMetadata(val groupId: String, initialState: GroupState
 
   private var state: GroupState = initialState
   var protocolType: Option[String] = None
-  var generationId = 0
-  private var leaderId: Option[String] = None
-  private var protocol: Option[String] = None
+  var generationId = 0        // 纪元号
+  private var leaderId: Option[String] = None   // leader, 只有一个主消费者
+  private var protocol: Option[String] = None   // 只有一个协议
 
   private val members = new mutable.HashMap[String, MemberMetadata]
   private val offsets = new mutable.HashMap[TopicPartition, CommitRecordMetadataAndOffset]
@@ -196,6 +196,10 @@ private[group] class GroupMetadata(val groupId: String, initialState: GroupState
   def leaderOrNull: String = leaderId.orNull
   def protocolOrNull: String = protocol.orNull
 
+  /**
+    * 加入组
+    * @param member
+    */
   def add(member: MemberMetadata) {
     if (members.isEmpty)
       this.protocolType = Some(member.protocolType)

@@ -50,21 +50,28 @@ case class MemberSummary(memberId: String,
  *                            and the group transitions to stable
  */
 @nonthreadsafe
-private[group] class MemberMetadata(val memberId: String,
-                                    val groupId: String,
+private[group] class MemberMetadata(val memberId: String, // 成员编号
+                                    val groupId: String, // 组编号
                                     val clientId: String,
                                     val clientHost: String,
                                     val rebalanceTimeoutMs: Int,
-                                    val sessionTimeoutMs: Int,
+                                    val sessionTimeoutMs: Int,     // 会话超时时间
                                     val protocolType: String,
                                     var supportedProtocols: List[(String, Array[Byte])]) {
 
+  // 分配的分区，即分区列表
   var assignment: Array[Byte] = Array.empty[Byte]
+  // 加入组的回调方法
   var awaitingJoinCallback: JoinGroupResult => Unit = null
+  // 同步组的回调方法
   var awaitingSyncCallback: (Array[Byte], Errors) => Unit = null
   var latestHeartbeat: Long = -1
   var isLeaving: Boolean = false
 
+  /**
+    * 支持的协议，比如range,roundRobin
+    * @return
+    */
   def protocols = supportedProtocols.map(_._1).toSet
 
   /**
