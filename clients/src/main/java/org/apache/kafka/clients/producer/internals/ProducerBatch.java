@@ -183,7 +183,9 @@ public final class ProducerBatch {
                 throw new IllegalStateException("Batch has already been completed in final state " + this.finalState.get());
             }
         }
-
+        /**
+         * 完成回调，或通知客户端消息发送完成
+         */
         completeFutureAndFireCallbacks(baseOffset, logAppendTime, exception);
         return true;
     }
@@ -192,6 +194,9 @@ public final class ProducerBatch {
         // Set the future before invoking the callbacks as we rely on its state for the `onCompletion` call
         produceFuture.set(baseOffset, logAppendTime, exception);
 
+        /**
+         * 执行回调方法
+         */
         // execute callbacks
         for (Thunk thunk : thunks) {
             try {
@@ -207,7 +212,7 @@ public final class ProducerBatch {
                 log.error("Error executing user-provided callback on message for topic-partition '{}'", topicPartition, e);
             }
         }
-
+        // 告诉客户端消息发送完成
         produceFuture.done();
     }
 

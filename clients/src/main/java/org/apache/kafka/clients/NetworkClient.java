@@ -395,6 +395,9 @@ public class NetworkClient implements KafkaClient {
             }
             // The call to build may also throw UnsupportedVersionException, if there are essential
             // fields that cannot be represented in the chosen version.
+            /**
+             * 发送
+             */
             doSend(clientRequest, isInternalRequest, now, builder.build(version));
         } catch (UnsupportedVersionException e) {
             // If the version is not supported, skip sending the request over the wire.
@@ -471,6 +474,9 @@ public class NetworkClient implements KafkaClient {
 
         long metadataTimeout = metadataUpdater.maybeUpdate(now);
         try {
+            /**
+             * 处理
+             */
             this.selector.poll(Utils.min(timeout, metadataTimeout, requestTimeoutMs));
         } catch (IOException e) {
             log.error("Unexpected error during I/O", e);
@@ -511,6 +517,7 @@ public class NetworkClient implements KafkaClient {
     }
 
     private void completeResponses(List<ClientResponse> responses) {
+        // 有了响应以后，调用回调函数
         for (ClientResponse response : responses) {
             try {
                 /**

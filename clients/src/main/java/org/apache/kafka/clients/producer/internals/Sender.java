@@ -621,6 +621,9 @@ public class Sender implements Runnable {
             transactionManager.removeInFlightBatch(batch);
         }
 
+        /**
+         * 执行完成后的动作
+         */
         if (batch.done(response.baseOffset, response.logAppendTime, null))
             this.accumulator.deallocate(batch);
     }
@@ -725,6 +728,7 @@ public class Sender implements Runnable {
         }
         ProduceRequest.Builder requestBuilder = ProduceRequest.Builder.forMagic(minUsedMagic, acks, timeout,
                 produceRecordsByPartition, transactionalId);
+        // 设置了回调方法，调用了Feture的done方法。
         RequestCompletionHandler callback = new RequestCompletionHandler() {
             public void onComplete(ClientResponse response) {
                 handleProduceResponse(response, recordsByPartition, time.milliseconds());

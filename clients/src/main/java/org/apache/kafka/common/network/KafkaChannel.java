@@ -180,6 +180,9 @@ public class KafkaChannel {
     }
 
     public void setSend(Send send) {
+        /**
+         * 如果之前的没有发送完成，则不能继续发送
+         */
         if (this.send != null)
             throw new IllegalStateException("Attempt to begin a send operation with prior send operation still in progress, connection id is " + id);
         this.send = send;
@@ -192,11 +195,13 @@ public class KafkaChannel {
         if (receive == null) {
             receive = new NetworkReceive(maxReceiveSize, id, memoryPool);
         }
-
+        // 接收数据
         receive(receive);
+        // 是否接受完成
         if (receive.complete()) {
             receive.payload().rewind();
             result = receive;
+            // 用于下次接收
             receive = null;
         } else if (receive.requiredMemoryAmountKnown() && !receive.memoryAllocated() && isInMutableState()) {
             //pool must be out of memory, mute ourselves.
@@ -205,11 +210,17 @@ public class KafkaChannel {
         return result;
     }
 
+    /**
+     * 选择器轮询时，检测到写事件，则调用Kafka通道的write方法
+     * @return
+     * @throws IOException
+     */
     public Send write() throws IOException {
         Send result = null;
+        // 如果send()方法返回true请求成功
         if (send != null && send(send)) {
             result = send;
-            send = null;
+            send = null; // 成功后把值设置为null, 后面的请求可以发送
         }
         return result;
     }
@@ -238,8 +249,9 @@ public class KafkaChannel {
     private boolean send(Send send) throws IOException {
         send.writeTo(transportLayer);
         if (send.completed())
+            // 如果完成了，则取消写事件
             transportLayer.removeInterestOps(SelectionKey.OP_WRITE);
-
+        // 如果没有完成，继续监听写事件
         return send.completed();
     }
 

@@ -58,6 +58,7 @@ public final class FutureRecordMetadata implements Future<RecordMetadata> {
 
     @Override
     public RecordMetadata get() throws InterruptedException, ExecutionException {
+
         this.result.await();
         if (nextRecordMetadata != null)
             return nextRecordMetadata.get();
